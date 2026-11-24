@@ -44,3 +44,4 @@ describe("HistoricalTrendChart Component", () => {
     expect(screen.getByText(/No historical hourly records/i)).toBeInTheDocument();
   });
 });
+

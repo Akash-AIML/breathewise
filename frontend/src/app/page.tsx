@@ -13,6 +13,10 @@ import {
   Navigation,
   GitCompare,
   TrendingUp,
+  Calendar,
+  Home,
+  Leaf,
+  Users,
 } from "lucide-react";
 import { AQIBadge } from "@/components/aqi/aqi-badge";
 import { Button } from "@/components/ui/button";
@@ -20,8 +24,13 @@ import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { HistoricalTrendChart } from "@/components/dashboard/historical-trend-chart";
 import { StationComparisonView } from "@/components/dashboard/station-comparison-view";
 import { StationMap, MapStation } from "@/components/dashboard/station-map";
-import { fetchAirQuality, fetchStations } from "@/lib/api";
-import { NormalizedObservation, StationMetadata } from "@/types/observation";
+import { HouseholdProfileDialog } from "@/components/profile/household-profile-dialog";
+import { DailyPlanner } from "@/components/planner/daily-planner";
+import { IndoorAssistant } from "@/components/indoor/indoor-assistant";
+import { SustainableAlternativesView } from "@/components/sustainability/sustainable-alternatives";
+import { fetchAirQuality, fetchPersonalizedPlan } from "@/lib/api";
+import { NormalizedObservation } from "@/types/observation";
+import { HouseholdProfile, PersonalizedPlan } from "@/types/recommendations";
 
 const POPULAR_CITIES: (MapStation & { distance_km?: number })[] = [
   { name: "Delhi (ITO)", station_id: "cpcb_delhi_ito", city: "Delhi", state: "Delhi", lat: 28.6289, lon: 77.2407 },
@@ -39,10 +48,27 @@ const POPULAR_CITIES: (MapStation & { distance_km?: number })[] = [
 export default function HomePage() {
   const [selectedStation, setSelectedStation] = useState<MapStation>(POPULAR_CITIES[0]);
   const [observation, setObservation] = useState<NormalizedObservation | null>(null);
+  const [plan, setPlan] = useState<PersonalizedPlan | null>(null);
+  const [profile, setProfile] = useState<HouseholdProfile>({
+    has_children: true,
+    has_elderly: false,
+    has_respiratory_sensitivity: true,
+    has_cardiovascular_sensitivity: false,
+    occupation_type: "indoor",
+    commute_method: "two_wheeler",
+    exercise_routine: "morning_outdoor",
+    indoor_ventilation: "natural",
+    has_air_purifier: false,
+    home_area_sqft: 650,
+  });
+  const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [isPlanLoading, setIsPlanLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [geoStatus, setGeoStatus] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<"overview" | "trends" | "comparison" | "map">("overview");
+  const [activeTab, setActiveTab] = useState<
+    "overview" | "trends" | "planner" | "indoor" | "sustainability" | "comparison" | "map"
+  >("overview");
 
   const loadData = async (lat: number, lon: number, bypassCache = false) => {
     setIsLoading(true);
@@ -63,11 +89,23 @@ export default function HomePage() {
     }
   };
 
+  const loadPlan = async (lat: number, lon: number, prof: HouseholdProfile) => {
+    setIsPlanLoading(true);
+    try {
+      const planRes = await fetchPersonalizedPlan(lat, lon, prof);
+      setPlan(planRes);
+    } catch (err) {
+      setPlan(null);
+    } finally {
+      setIsPlanLoading(false);
+    }
+  };
+
   useEffect(() => {
     loadData(selectedStation.lat, selectedStation.lon);
-  }, [selectedStation]);
+    loadPlan(selectedStation.lat, selectedStation.lon, profile);
+  }, [selectedStation, profile]);
 
-  // Browser Geolocation handler with graceful rejection handling
   const handleUseMyLocation = () => {
     if (!navigator.geolocation) {
       setGeoStatus("Geolocation is not supported by your browser.");
@@ -81,7 +119,6 @@ export default function HomePage() {
         const userLon = pos.coords.longitude;
         setGeoStatus(`Location found (${userLat.toFixed(2)}°N, ${userLon.toFixed(2)}°E)`);
 
-        // Find nearest station from our registry
         const nearest = [...POPULAR_CITIES].sort((a, b) => {
           const distA = Math.hypot(a.lat - userLat, a.lon - userLon);
           const distB = Math.hypot(b.lat - userLat, b.lon - userLon);
@@ -100,7 +137,6 @@ export default function HomePage() {
     );
   };
 
-  // Compute relative time since measurement
   const getRelativeTime = (isoString?: string) => {
     if (!isoString) return "";
     const diffMs = Date.now() - new Date(isoString).getTime();
@@ -114,17 +150,40 @@ export default function HomePage() {
     <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8 space-y-8">
       {/* Hero Environmental Intelligence Banner */}
       <section className="rounded-2xl bg-gradient-to-br from-emerald-950 via-emerald-900 to-teal-950 p-6 sm:p-8 text-white shadow-lg">
-        <div className="max-w-3xl space-y-3">
-          <div className="inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1 text-xs font-semibold tracking-wide text-emerald-200 backdrop-blur-xs">
-            <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
-            100% Genuine Environmental Measurements • Zero Synthetic Generation
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+          <div className="max-w-2xl space-y-3">
+            <div className="inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1 text-xs font-semibold tracking-wide text-emerald-200 backdrop-blur-xs">
+              <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
+              100% Genuine Environmental Measurements • Zero Synthetic Generation
+            </div>
+            <h1 className="text-3xl font-extrabold sm:text-4xl tracking-tight">
+              BreatheWise — Evidence-Based Air Quality Assistant
+            </h1>
+            <p className="text-emerald-100 text-sm sm:text-base leading-relaxed">
+              Empowering Indian families with authentic CPCB air measurements, deterministic health precautions, and personalized low-emission routines.
+            </p>
           </div>
-          <h1 className="text-3xl font-extrabold sm:text-4xl tracking-tight">
-            BreatheWise — Urban Air Quality Intelligence
-          </h1>
-          <p className="text-emerald-100 text-sm sm:text-base leading-relaxed">
-            Evidence-based air pollution monitoring for Indian families. Verified CPCB sub-index formulas, continuous criteria pollutant tracking, and actionable protective routines.
-          </p>
+
+          {/* Household Profile Button */}
+          <div className="shrink-0 bg-white/10 backdrop-blur-md p-4 rounded-xl border border-white/15 space-y-2">
+            <span className="text-[11px] font-bold text-emerald-200 uppercase tracking-wider block">
+              Active Household Profile
+            </span>
+            <div className="text-xs text-white space-y-0.5">
+              <p>• {profile.has_children ? "Children at home" : "No young children"}</p>
+              <p>• {profile.has_respiratory_sensitivity ? "Respiratory Sensitivity (Asthma)" : "Standard Sensitivity"}</p>
+              <p>• Commute: {profile.commute_method.replace("_", " ")}</p>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setIsProfileOpen(true)}
+              className="w-full mt-2 bg-emerald-800 text-white border-emerald-600 hover:bg-emerald-700 text-xs flex items-center justify-center gap-1.5"
+            >
+              <Users className="h-3.5 w-3.5" />
+              Configure Profile
+            </Button>
+          </div>
         </div>
 
         {/* Location & Quick Select Controls */}
@@ -173,9 +232,9 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* Navigation Tabs for Dashboard Views */}
+      {/* Navigation Tabs for All 6 Modules */}
       <div className="border-b border-slate-200 dark:border-slate-800">
-        <nav className="flex space-x-6 text-sm font-semibold" aria-label="Dashboard Views">
+        <nav className="flex flex-wrap gap-x-6 gap-y-2 text-sm font-semibold" aria-label="Dashboard Views">
           <button
             onClick={() => setActiveTab("overview")}
             className={`pb-3 border-b-2 flex items-center gap-2 transition-colors ${
@@ -183,10 +242,45 @@ export default function HomePage() {
                 ? "border-emerald-600 text-emerald-800 dark:border-emerald-400 dark:text-emerald-300"
                 : "border-transparent text-slate-500 hover:text-slate-800 dark:text-slate-400"
             }`}
-            aria-current={activeTab === "overview" ? "page" : undefined}
           >
             <Wind className="h-4 w-4" aria-hidden="true" />
             Live Dashboard
+          </button>
+
+          <button
+            onClick={() => setActiveTab("planner")}
+            className={`pb-3 border-b-2 flex items-center gap-2 transition-colors ${
+              activeTab === "planner"
+                ? "border-emerald-600 text-emerald-800 dark:border-emerald-400 dark:text-emerald-300"
+                : "border-transparent text-slate-500 hover:text-slate-800 dark:text-slate-400"
+            }`}
+          >
+            <Calendar className="h-4 w-4" aria-hidden="true" />
+            Daily Planner
+          </button>
+
+          <button
+            onClick={() => setActiveTab("indoor")}
+            className={`pb-3 border-b-2 flex items-center gap-2 transition-colors ${
+              activeTab === "indoor"
+                ? "border-emerald-600 text-emerald-800 dark:border-emerald-400 dark:text-emerald-300"
+                : "border-transparent text-slate-500 hover:text-slate-800 dark:text-slate-400"
+            }`}
+          >
+            <Home className="h-4 w-4" aria-hidden="true" />
+            Indoor Air Guide
+          </button>
+
+          <button
+            onClick={() => setActiveTab("sustainability")}
+            className={`pb-3 border-b-2 flex items-center gap-2 transition-colors ${
+              activeTab === "sustainability"
+                ? "border-emerald-600 text-emerald-800 dark:border-emerald-400 dark:text-emerald-300"
+                : "border-transparent text-slate-500 hover:text-slate-800 dark:text-slate-400"
+            }`}
+          >
+            <Leaf className="h-4 w-4" aria-hidden="true" />
+            Sustainable Transit
           </button>
 
           <button
@@ -196,7 +290,6 @@ export default function HomePage() {
                 ? "border-emerald-600 text-emerald-800 dark:border-emerald-400 dark:text-emerald-300"
                 : "border-transparent text-slate-500 hover:text-slate-800 dark:text-slate-400"
             }`}
-            aria-current={activeTab === "trends" ? "page" : undefined}
           >
             <TrendingUp className="h-4 w-4" aria-hidden="true" />
             24-Hour Trends
@@ -209,7 +302,6 @@ export default function HomePage() {
                 ? "border-emerald-600 text-emerald-800 dark:border-emerald-400 dark:text-emerald-300"
                 : "border-transparent text-slate-500 hover:text-slate-800 dark:text-slate-400"
             }`}
-            aria-current={activeTab === "comparison" ? "page" : undefined}
           >
             <GitCompare className="h-4 w-4" aria-hidden="true" />
             Station Comparison
@@ -222,7 +314,6 @@ export default function HomePage() {
                 ? "border-emerald-600 text-emerald-800 dark:border-emerald-400 dark:text-emerald-300"
                 : "border-transparent text-slate-500 hover:text-slate-800 dark:text-slate-400"
             }`}
-            aria-current={activeTab === "map" ? "page" : undefined}
           >
             <MapPin className="h-4 w-4" aria-hidden="true" />
             Station Map
@@ -288,7 +379,6 @@ export default function HomePage() {
             <div className="space-y-6">
               {/* Summary Cards Grid */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                {/* AQI Overview Card */}
                 <Card className="md:col-span-1 flex flex-col justify-between border-slate-300 shadow-md">
                   <CardHeader>
                     <CardTitle className="text-sm font-medium text-slate-500 dark:text-slate-400">
@@ -323,7 +413,6 @@ export default function HomePage() {
                   </CardContent>
                 </Card>
 
-                {/* Provenance & Integrity Metadata Card */}
                 <Card className="md:col-span-2">
                   <CardHeader>
                     <CardTitle className="text-base font-semibold text-slate-900 dark:text-slate-100 flex items-center gap-2">
@@ -376,15 +465,6 @@ export default function HomePage() {
                         </p>
                       </div>
                     )}
-
-                    {observation.station.elevation_m !== undefined && observation.station.elevation_m !== null && (
-                      <div className="space-y-1">
-                        <span className="text-slate-500">Station Elevation:</span>
-                        <p className="font-semibold text-slate-800 dark:text-slate-200">
-                          {observation.station.elevation_m} meters ASL
-                        </p>
-                      </div>
-                    )}
                   </CardContent>
                 </Card>
               </div>
@@ -415,20 +495,60 @@ export default function HomePage() {
                   ))}
                 </div>
               </div>
-
-              {/* Embedded 24-Hour Trend Chart Preview */}
-              {observation.hourly_trend && observation.hourly_trend.length > 0 && (
-                <HistoricalTrendChart
-                  data={observation.hourly_trend}
-                  stationName={selectedStation.name}
-                />
-              )}
             </div>
           )}
         </section>
       )}
 
-      {/* TAB 2: 24-HOUR TRENDS */}
+      {/* TAB 2: DAILY ACTION PLANNER */}
+      {activeTab === "planner" && (
+        <section aria-labelledby="planner-heading" className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h2 id="planner-heading" className="text-xl font-bold text-slate-900 dark:text-slate-100">
+              Personalized Daily Action Planner
+            </h2>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setIsProfileOpen(true)}
+              className="text-xs flex items-center gap-1.5"
+            >
+              <Users className="h-3.5 w-3.5" />
+              Adjust Household Vulnerabilities
+            </Button>
+          </div>
+          <DailyPlanner plan={plan} isLoading={isPlanLoading} />
+        </section>
+      )}
+
+      {/* TAB 3: INDOOR AIR QUALITY ASSISTANT */}
+      {activeTab === "indoor" && (
+        <section aria-labelledby="indoor-heading" className="space-y-4">
+          <h2 id="indoor-heading" className="text-xl font-bold text-slate-900 dark:text-slate-100">
+            Evidence-Based Indoor Air Quality Assistant
+          </h2>
+          <IndoorAssistant
+            guidance={plan?.indoor_guidance ?? null}
+            onAreaChange={(newArea) => {
+              setProfile((p) => ({ ...p, home_area_sqft: newArea }));
+            }}
+          />
+        </section>
+      )}
+
+      {/* TAB 4: SUSTAINABLE ALTERNATIVES */}
+      {activeTab === "sustainability" && (
+        <section aria-labelledby="sustainability-heading" className="space-y-4">
+          <h2 id="sustainability-heading" className="text-xl font-bold text-slate-900 dark:text-slate-100">
+            Sustainable Mobility & Emission Impact
+          </h2>
+          <SustainableAlternativesView
+            alternatives={plan?.sustainable_alternatives ?? []}
+          />
+        </section>
+      )}
+
+      {/* TAB 5: 24-HOUR TRENDS */}
       {activeTab === "trends" && (
         <section aria-labelledby="trends-heading" className="space-y-6">
           {observation?.hourly_trend && observation.hourly_trend.length > 0 ? (
@@ -444,14 +564,14 @@ export default function HomePage() {
         </section>
       )}
 
-      {/* TAB 3: STATION COMPARISON */}
+      {/* TAB 6: STATION COMPARISON */}
       {activeTab === "comparison" && (
         <section aria-labelledby="comparison-heading">
           <StationComparisonView />
         </section>
       )}
 
-      {/* TAB 4: STATION MAP */}
+      {/* TAB 7: STATION MAP */}
       {activeTab === "map" && (
         <section aria-labelledby="map-heading">
           <StationMap
@@ -464,6 +584,16 @@ export default function HomePage() {
           />
         </section>
       )}
+
+      {/* Household Profile Dialog Modal */}
+      <HouseholdProfileDialog
+        isOpen={isProfileOpen}
+        onClose={() => setIsProfileOpen(false)}
+        profile={profile}
+        onSave={(updated) => {
+          setProfile(updated);
+        }}
+      />
     </div>
   );
 }

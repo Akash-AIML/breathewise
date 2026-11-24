@@ -36,3 +36,4 @@ describe("StationMap Component", () => {
     expect(handleSelect).toHaveBeenCalledWith(mockStations[1]);
   });
 });
+

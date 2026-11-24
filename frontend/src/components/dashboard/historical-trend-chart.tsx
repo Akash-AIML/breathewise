@@ -222,3 +222,4 @@ export const HistoricalTrendChart: React.FC<HistoricalTrendChartProps> = ({
     </Card>
   );
 };
+
