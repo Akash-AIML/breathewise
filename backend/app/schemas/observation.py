@@ -1,6 +1,6 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -41,6 +41,18 @@ class NormalizedPollutantReading(BaseModel):
     averaging_period_hours: int = Field(24, ge=1, le=24, description="Standard averaging period")
 
 
+class HourlyTrendPoint(BaseModel):
+    time: str = Field(..., description="ISO timestamp for the hour")
+    pm2_5: Optional[float] = None
+    pm10: Optional[float] = None
+    no2: Optional[float] = None
+    so2: Optional[float] = None
+    co: Optional[float] = None
+    o3: Optional[float] = None
+    aqi: Optional[int] = None
+    category: Optional[AQICategory] = None
+
+
 class StationMetadata(BaseModel):
     station_id: str
     station_name: str
@@ -59,17 +71,14 @@ class NormalizedObservation(BaseModel):
     calculated_aqi: Optional[int] = Field(None, ge=0, description="Overall CPCB AQI value")
     dominant_pollutant: Optional[PollutantType] = None
     aqi_category: Optional[AQICategory] = None
-    data_sufficiency_met: bool = Field(
-        False, description="Whether CPCB >=3 pollutants rule is satisfied"
-    )
-    measurement_timestamp: datetime = Field(
-        ..., description="Actual timestamp reported by the station"
-    )
+    data_sufficiency_met: bool = Field(False, description="Whether CPCB >=3 pollutants rule is satisfied")
+    measurement_timestamp: datetime = Field(..., description="Actual timestamp reported by the station")
     retrieval_timestamp: datetime = Field(
-        default_factory=datetime.utcnow, description="When our server retrieved it"
+        default_factory=lambda: datetime.now(timezone.utc), description="When our server retrieved it"
     )
     data_quality_status: DataQualityStatus = Field(DataQualityStatus.VERIFIED)
     notes: Optional[str] = None
+    hourly_trend: List[HourlyTrendPoint] = Field(default_factory=list, description="Historical hourly trend series")
 
     @field_validator("readings")
     @classmethod

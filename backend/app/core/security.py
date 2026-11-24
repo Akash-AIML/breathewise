@@ -37,12 +37,18 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         # client_ip -> list of timestamps
         self.clients: Dict[str, List[float]] = defaultdict(list)
 
+    def reset(self):
+        """Resets the rate limiter cache (useful for testing)."""
+        self.clients.clear()
+
     async def dispatch(self, request: Request, call_next):
         # Exclude internal health checks from aggressive rate limiting
         if request.url.path in ("/health", "/api/v1/health"):
             return await call_next(request)
 
-        client_ip = request.client.host if request.client else "unknown"
+        # Allow tests to set isolated test IPs via header
+        test_ip = request.headers.get("X-Test-Client-IP")
+        client_ip = test_ip or (request.client.host if request.client else "unknown")
         now = time.time()
         window_start = now - self.window_seconds
 

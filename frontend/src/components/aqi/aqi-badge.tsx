@@ -89,3 +89,4 @@ export const AQIBadge: React.FC<AQIBadgeProps> = ({ category, aqi, className }) 
     </span>
   );
 };
+

@@ -134,11 +134,12 @@ async def test_air_quality_validation_errors():
 
 @pytest.mark.asyncio
 async def test_rate_limiting():
-    # Test rate limiter directly on an endpoint
+    # Test rate limiter directly on an endpoint with isolated test IP
+    headers = {"X-Test-Client-IP": "rate-limit-burst-ip"}
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         # Make a burst of requests to /api/v1/stations
         for _ in range(125):
-            resp = await client.get("/api/v1/stations")
+            resp = await client.get("/api/v1/stations", headers=headers)
             if resp.status_code == 429:
                 data = resp.json()
                 assert data["success"] is False

@@ -31,6 +31,18 @@ export interface NormalizedPollutantReading {
   averaging_period_hours: number;
 }
 
+export interface HourlyTrendPoint {
+  time: string;
+  pm2_5?: number | null;
+  pm10?: number | null;
+  no2?: number | null;
+  so2?: number | null;
+  co?: number | null;
+  o3?: number | null;
+  aqi?: number | null;
+  category?: AQICategory | null;
+}
+
 export interface StationMetadata {
   station_id: string;
   station_name: string;
@@ -54,6 +66,7 @@ export interface NormalizedObservation {
   retrieval_timestamp: string;
   data_quality_status: DataQualityStatus;
   notes?: string | null;
+  hourly_trend?: HourlyTrendPoint[];
 }
 
 export interface AirQualityApiResponse {
@@ -66,4 +79,21 @@ export interface StationsApiResponse {
   success: boolean;
   count: number;
   data: StationMetadata[];
+}
+
+export interface ComparisonDifferential {
+  cleanest_station_id?: string | null;
+  cleanest_station_name?: string | null;
+  most_polluted_station_id?: string | null;
+  most_polluted_station_name?: string | null;
+  aqi_difference?: number | null;
+  pm25_difference_ug_m3?: number | null;
+  summary: string;
+}
+
+export interface ComparisonApiResponse {
+  success: boolean;
+  stations_count: number;
+  observations: NormalizedObservation[];
+  differential?: ComparisonDifferential | null;
 }

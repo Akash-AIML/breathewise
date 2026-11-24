@@ -8,6 +8,7 @@ from app.adapters.base import AirQualityAdapter
 from app.core.aqi_calculator import compute_official_cpcb_aqi
 from app.core.config import settings
 from app.schemas.observation import (
+    HourlyTrendPoint,
     NormalizedObservation,
     NormalizedPollutantReading,
     PollutantType,
@@ -63,7 +64,6 @@ class OpenMeteoAdapter(AirQualityAdapter):
     async def search_stations(
         self, city: Optional[str] = None, state: Optional[str] = None
     ) -> List[StationMetadata]:
-        # OpenMeteo is a spatial grid API rather than a catalog of fixed physical towers
         return []
 
     def _parse_response(
@@ -76,9 +76,7 @@ class OpenMeteoAdapter(AirQualityAdapter):
         # Parse timestamp: ISO8601 string, e.g. "2026-11-24T16:30"
         time_str = current.get("time")
         try:
-            # Open-Meteo current time is in local Asia/Kolkata timezone (+05:30)
             naive_dt = datetime.fromisoformat(time_str)
-            # Add IST timezone offset (+05:30)
             from datetime import timedelta
             from datetime import timezone as tz
 
@@ -156,6 +154,72 @@ class OpenMeteoAdapter(AirQualityAdapter):
         # Compute official CPCB Indian AQI
         calc_result = compute_official_cpcb_aqi(readings)
 
+        # Parse Hourly Historical & Forecast Trend (up to 24 hourly points)
+        hourly_trend: List[HourlyTrendPoint] = []
+        hourly_data = data.get("hourly", {})
+        times = hourly_data.get("time", [])
+        if times:
+            pm25_series = hourly_data.get("pm2_5", [])
+            pm10_series = hourly_data.get("pm10", [])
+            no2_series = hourly_data.get("nitrogen_dioxide", [])
+            so2_series = hourly_data.get("sulphur_dioxide", [])
+            co_series = hourly_data.get("carbon_monoxide", [])
+            o3_series = hourly_data.get("ozone", [])
+
+            # Take up to the last 24 points available
+            count = min(len(times), 24)
+            start_idx = max(0, len(times) - 24) if len(times) > 24 else 0
+
+            for i in range(start_idx, start_idx + count):
+                h_readings: Dict[PollutantType, NormalizedPollutantReading] = {}
+                h_pm25 = pm25_series[i] if i < len(pm25_series) else None
+                h_pm10 = pm10_series[i] if i < len(pm10_series) else None
+                h_no2 = no2_series[i] if i < len(no2_series) else None
+                h_so2 = so2_series[i] if i < len(so2_series) else None
+                h_co = co_series[i] if i < len(co_series) else None
+                h_o3 = o3_series[i] if i < len(o3_series) else None
+
+                if h_pm25 is not None and h_pm25 >= 0:
+                    h_readings[PollutantType.PM2_5] = NormalizedPollutantReading(
+                        pollutant=PollutantType.PM2_5, value=float(h_pm25), unit="µg/m³"
+                    )
+                if h_pm10 is not None and h_pm10 >= 0:
+                    h_readings[PollutantType.PM10] = NormalizedPollutantReading(
+                        pollutant=PollutantType.PM10, value=float(h_pm10), unit="µg/m³"
+                    )
+                if h_no2 is not None and h_no2 >= 0:
+                    h_readings[PollutantType.NO2] = NormalizedPollutantReading(
+                        pollutant=PollutantType.NO2, value=float(h_no2), unit="µg/m³"
+                    )
+                if h_so2 is not None and h_so2 >= 0:
+                    h_readings[PollutantType.SO2] = NormalizedPollutantReading(
+                        pollutant=PollutantType.SO2, value=float(h_so2), unit="µg/m³"
+                    )
+                if h_co is not None and h_co >= 0:
+                    h_readings[PollutantType.CO] = NormalizedPollutantReading(
+                        pollutant=PollutantType.CO, value=round(float(h_co) / 1000.0, 2), unit="mg/m³"
+                    )
+                if h_o3 is not None and h_o3 >= 0:
+                    h_readings[PollutantType.O3] = NormalizedPollutantReading(
+                        pollutant=PollutantType.O3, value=float(h_o3), unit="µg/m³"
+                    )
+
+                h_calc = compute_official_cpcb_aqi(h_readings) if len(h_readings) >= 3 else None
+
+                hourly_trend.append(
+                    HourlyTrendPoint(
+                        time=times[i],
+                        pm2_5=round(float(h_pm25), 1) if h_pm25 is not None else None,
+                        pm10=round(float(h_pm10), 1) if h_pm10 is not None else None,
+                        no2=round(float(h_no2), 1) if h_no2 is not None else None,
+                        so2=round(float(h_so2), 1) if h_so2 is not None else None,
+                        co=round(float(h_co) / 1000.0, 2) if h_co is not None else None,
+                        o3=round(float(h_o3), 1) if h_o3 is not None else None,
+                        aqi=h_calc.aqi if h_calc else None,
+                        category=h_calc.category if h_calc else None,
+                    )
+                )
+
         elevation = data.get("elevation", 0.0)
         station = StationMetadata(
             station_id=f"openmeteo_{round(lat, 2)}_{round(lon, 2)}",
@@ -179,4 +243,5 @@ class OpenMeteoAdapter(AirQualityAdapter):
             retrieval_timestamp=datetime.now(timezone.utc),
             data_quality_status=calc_result.quality_status,
             notes=calc_result.reason,
+            hourly_trend=hourly_trend,
         )

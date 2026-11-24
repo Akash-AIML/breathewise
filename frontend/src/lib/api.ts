@@ -1,4 +1,9 @@
-import { AirQualityApiResponse, StationsApiResponse, StationMetadata } from "@/types/observation";
+import {
+  AirQualityApiResponse,
+  ComparisonApiResponse,
+  StationMetadata,
+  StationsApiResponse,
+} from "@/types/observation";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
 
@@ -25,7 +30,7 @@ export async function fetchAirQuality(
 
   const response = await fetch(url.toString(), {
     method: "GET",
-    headers: { "Accept": "application/json" },
+    headers: { Accept: "application/json" },
   });
 
   if (!response.ok) {
@@ -44,11 +49,28 @@ export async function fetchStations(query?: string): Promise<StationsApiResponse
 
   const response = await fetch(url.toString(), {
     method: "GET",
-    headers: { "Accept": "application/json" },
+    headers: { Accept: "application/json" },
   });
 
   if (!response.ok) {
     throw new ApiError("Failed to fetch monitoring stations.", response.status);
+  }
+
+  return response.json();
+}
+
+export async function fetchStationComparison(stationIds: string[]): Promise<ComparisonApiResponse> {
+  const url = new URL(`${API_BASE_URL}/api/v1/stations/compare`);
+  url.searchParams.append("station_ids", stationIds.join(","));
+
+  const response = await fetch(url.toString(), {
+    method: "GET",
+    headers: { Accept: "application/json" },
+  });
+
+  if (!response.ok) {
+    const errorBody = await response.json().catch(() => ({}));
+    throw new ApiError(errorBody.message || "Failed to compare stations.", response.status);
   }
 
   return response.json();
