@@ -6,3 +6,7 @@ global.ResizeObserver = class ResizeObserver {
   unobserve() {}
   disconnect() {}
 };
+
+// Polyfill scrollIntoView for jsdom (used by ChatAssistant auto-scroll)
+window.HTMLElement.prototype.scrollIntoView = function () {};
+

@@ -158,3 +158,4 @@ export const IndoorAssistant: React.FC<IndoorAssistantProps> = ({ guidance, onAr
     </div>
   );
 };
+

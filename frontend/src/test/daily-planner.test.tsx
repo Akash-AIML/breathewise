@@ -100,3 +100,4 @@ describe("DailyPlanner Component", () => {
     expect(screen.getByText(/CPCB diurnal profiles/i)).toBeInTheDocument();
   });
 });
+

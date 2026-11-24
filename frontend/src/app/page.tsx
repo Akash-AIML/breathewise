@@ -17,6 +17,7 @@ import {
   Home,
   Leaf,
   Users,
+  MessageCircle,
 } from "lucide-react";
 import { AQIBadge } from "@/components/aqi/aqi-badge";
 import { Button } from "@/components/ui/button";
@@ -28,6 +29,7 @@ import { HouseholdProfileDialog } from "@/components/profile/household-profile-d
 import { DailyPlanner } from "@/components/planner/daily-planner";
 import { IndoorAssistant } from "@/components/indoor/indoor-assistant";
 import { SustainableAlternativesView } from "@/components/sustainability/sustainable-alternatives";
+import { ChatAssistant } from "@/components/assistant/chat-assistant";
 import { fetchAirQuality, fetchPersonalizedPlan } from "@/lib/api";
 import { NormalizedObservation } from "@/types/observation";
 import { HouseholdProfile, PersonalizedPlan } from "@/types/recommendations";
@@ -67,7 +69,7 @@ export default function HomePage() {
   const [error, setError] = useState<string | null>(null);
   const [geoStatus, setGeoStatus] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<
-    "overview" | "trends" | "planner" | "indoor" | "sustainability" | "comparison" | "map"
+    "overview" | "trends" | "planner" | "indoor" | "sustainability" | "comparison" | "map" | "assistant"
   >("overview");
 
   const loadData = async (lat: number, lon: number, bypassCache = false) => {
@@ -317,6 +319,19 @@ export default function HomePage() {
           >
             <MapPin className="h-4 w-4" aria-hidden="true" />
             Station Map
+          </button>
+
+          <button
+            onClick={() => setActiveTab("assistant")}
+            className={`pb-3 border-b-2 flex items-center gap-2 transition-colors ${
+              activeTab === "assistant"
+                ? "border-emerald-600 text-emerald-800 dark:border-emerald-400 dark:text-emerald-300"
+                : "border-transparent text-slate-500 hover:text-slate-800 dark:text-slate-400"
+            }`}
+            aria-current={activeTab === "assistant" ? "page" : undefined}
+          >
+            <MessageCircle className="h-4 w-4" aria-hidden="true" />
+            AI Assistant
           </button>
         </nav>
       </div>
@@ -581,6 +596,22 @@ export default function HomePage() {
               setSelectedStation(stn);
               setActiveTab("overview");
             }}
+          />
+        </section>
+      )}
+
+      {/* TAB 8: AI ASSISTANT */}
+      {activeTab === "assistant" && (
+        <section aria-labelledby="assistant-heading" className="h-[72vh] flex flex-col rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden shadow-sm">
+          <h2 id="assistant-heading" className="sr-only">
+            BreatheWise AI Assistant
+          </h2>
+          <ChatAssistant
+            lat={selectedStation.lat}
+            lon={selectedStation.lon}
+            currentAqi={observation?.calculated_aqi}
+            profile={profile}
+            className="flex-1"
           />
         </section>
       )}

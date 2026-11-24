@@ -151,3 +151,4 @@ export const DailyPlanner: React.FC<DailyPlannerProps> = ({ plan, isLoading }) =
     </div>
   );
 };
+

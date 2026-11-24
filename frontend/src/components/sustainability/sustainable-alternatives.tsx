@@ -82,3 +82,4 @@ export const SustainableAlternativesView: React.FC<SustainableAlternativesProps>
     </div>
   );
 };
+

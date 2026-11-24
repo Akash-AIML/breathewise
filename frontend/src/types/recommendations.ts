@@ -77,3 +77,4 @@ export interface PersonalizedPlan {
   sustainable_alternatives: SustainableAlternative[];
   generated_at: string;
 }
+

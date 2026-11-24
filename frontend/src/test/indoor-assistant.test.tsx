@@ -36,3 +36,4 @@ describe("IndoorAssistant Component", () => {
     expect(screen.getByText("Always turn on kitchen chimney before tadka")).toBeInTheDocument();
   });
 });
+
