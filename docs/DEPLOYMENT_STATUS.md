@@ -32,5 +32,6 @@ that authentication exists and a deployment succeeds.
 
 ## Publishing status
 
-GitHub CLI authentication *is* available, so the public repository step is feasible and is handled
-separately from deployment. Source publication does not imply a running application.
+GitHub CLI authentication was available, and the public repository was created at
+https://github.com/Akash-AIML/breathewise (commit `c59d018`). Source publication does **not** imply a
+running application: no Render or Vercel service was created and no deployment URL exists.

@@ -18,7 +18,7 @@ remain blocked and are reported as such.**
 | Shared rate limiting | Pluggable store added: in-memory default, opt-in Redis with atomic Lua `INCR`/`PEXPIRE`/`PTTL`, bounded timeouts, fail-open on store errors, no credential logging. 8 new mocked tests; **Redis itself was not run**. |
 | Demo video | Real 37.2 s screen recording of the local verification instance created with Chromium/Playwright and converted with ffmpeg: `docs/artifacts/breathewise-demo.mp4`. No synthetic video. |
 | LinkedIn process doc | `docs/LINKEDIN_PROCESS.md` written from measured work only. |
-| Public GitHub repository | Pending final commit/push; GitHub CLI is authenticated as `Akash-AIML` with `repo` scope. |
+| Public GitHub repository | **Published.** `git commit` produced `c59d018`; `gh repo create breathewise --public --source=... --remote=origin --push` created `https://github.com/Akash-AIML/breathewise`. Verified `visibility: PUBLIC`, `isPrivate: false`, and local HEAD equals remote HEAD. No `.env` is tracked. |
 | Deployment | **Blocked.** No Render/Vercel credentials or CLIs found. `docs/DEPLOYMENT_STATUS.md` records the exact checks. |
 
 ## 2. Files added or changed in this milestone
@@ -66,7 +66,27 @@ remain blocked and are reported as such.**
 - The demo video is a local instance, not a deployed product.
 - 85% coverage does not prove provider fidelity; no live CPCB response has ever been observed here.
 
-## 6. Remaining work
+## 6. Publication evidence
+
+Commands actually run:
+
+```bash
+git add -A                         # after restoring the generated tsconfig.tsbuildinfo
+git check-ignore -v .env           # .gitignore:5:.env
+git commit -m "Integrate CPCB data, audits, shared rate limiting, and verification artifacts"
+# [main c59d018] ... 85 files changed, 17080 insertions(+), 773 deletions(-)
+gh repo create breathewise --public --source=/home/akash/Projects/AirQuality --remote=origin --push
+# https://github.com/Akash-AIML/breathewise
+gh repo view Akash-AIML/breathewise --json name,visibility,isPrivate,url,defaultBranchRef
+# visibility PUBLIC, isPrivate false, main
+git rev-parse HEAD                 # c59d01812632ef914312041b11a5ca6997b788ba
+git ls-remote origin HEAD          # c59d01812632ef914312041b11a5ca6997b788ba
+git ls-tree -r --name-only HEAD | grep -E '(^|/)\.env$'   # no matches
+```
+
+Publishing the source does **not** mean the application is deployed. No Render or Vercel service was created.
+
+## 7. Remaining work
 
 1. Re-run live CPCB tests on a network where data.gov.in responds; record real total/filters and update `CPCB_INTEGRATION.md`.
 2. Verify the averaging-period contract before enabling official AQI.

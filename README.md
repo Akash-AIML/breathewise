@@ -1,6 +1,9 @@
 # BreatheWise — Evidence-Based Urban Air Quality Assistant
 
 > **PromptWars Virtual Challenge 6 — Production-Quality Submission**
+>
+> Public repository: https://github.com/Akash-AIML/breathewise — **not deployed**; see
+> [`docs/DEPLOYMENT_STATUS.md`](docs/DEPLOYMENT_STATUS.md).
 
 [![Backend Tests](https://img.shields.io/badge/Backend%20Tests-130%20passing-brightgreen)](backend/tests)
 [![Frontend Tests](https://img.shields.io/badge/Frontend%20Tests-47%20passing-brightgreen)](frontend/src/test)
