@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   Wind,
   MapPin,
@@ -34,6 +34,7 @@ import { ChatAssistant } from "@/components/assistant/chat-assistant";
 import {
   fetchAirQuality,
   fetchPersonalizedPlan,
+  fetchReverseGeocode,
   fetchStations,
   searchLocations,
   GeocodedLocation,
@@ -98,6 +99,8 @@ export default function HomePage() {
   const [error, setError] = useState<string | null>(null);
   const [geoStatus, setGeoStatus] = useState<string | null>(null);
   const [locationLabel, setLocationLabel] = useState<string | null>(null);
+  // Guards against a slow reverse lookup overwriting a newer user selection.
+  const locationRequestRef = useRef(0);
   const [locationQuery, setLocationQuery] = useState("");
   const [locationResults, setLocationResults] = useState<GeocodedLocation[]>([]);
   const [isSearchingLocation, setIsSearchingLocation] = useState(false);
@@ -210,35 +213,48 @@ export default function HomePage() {
     }
 
     setGeoStatus("Requesting device location...");
+    const requestId = ++locationRequestRef.current;
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         const userLat = pos.coords.latitude;
         const userLon = pos.coords.longitude;
-        // The nearest named place is a label only. The exact device coordinates
-        // remain the coordinates sent to every downstream feature.
-        const nearest = nearestNamedLocation(userLat, userLon, POPULAR_CITIES);
-        const nearbyText = nearest
-          ? ` Nearest known location: ${nearest.point.city} (${nearest.distanceKm.toFixed(1)} km away).`
-          : " No listed popular location is nearby; using exact coordinates only.";
-        setGeoStatus(
-          `Using exact device coordinates (${userLat.toFixed(4)}, ${userLon.toFixed(4)}).${nearbyText}`
-        );
-        setLocationLabel(
-          nearest
-            ? `Nearest known location: ${nearest.point.name} (${nearest.distanceKm.toFixed(1)} km away)`
-            : "No listed popular location nearby"
-        );
+        const prefix = `Using exact device coordinates (${userLat.toFixed(4)}, ${userLon.toFixed(4)}).`;
+        // Do not block the data fetch on naming: exact coordinates are authoritative.
+        setGeoStatus(`${prefix} Resolving place name...`);
+        setLocationLabel("Exact device coordinates");
         setLocationResults([]);
         setSelectedStation({
-          name: nearest ? `My Exact Location near ${nearest.point.city}` : "My Exact Location",
+          name: "My Exact Location",
           station_id: "device_location",
-          city: nearest?.point.city ?? "Device coordinates",
-          state: nearest?.point.state ?? "",
+          city: "Device coordinates",
+          state: "",
           lat: userLat,
           lon: userLon,
         });
+
+        void fetchReverseGeocode(userLat, userLon).then((place) => {
+          if (requestId !== locationRequestRef.current) return;
+          // A hardcoded popular city is only a credible fallback when genuinely
+          // close. Otherwise reporting "near Bengaluru" 160 km away is wrong.
+          const nearby = nearestNamedLocation(userLat, userLon, POPULAR_CITIES);
+          const nearbyStation = nearby && nearby.distanceKm <= 25 ? nearby : null;
+          const suffix = place
+            ? ` Located in ${place.name}${place.state ? `, ${place.state}` : ""} (OpenStreetMap).`
+            : nearbyStation
+              ? ` Nearest mapped station: ${nearbyStation.point.city} (${nearbyStation.distanceKm.toFixed(1)} km away).`
+              : " No mapped place name is available for these coordinates.";
+          setGeoStatus(`${prefix}${suffix}`);
+          setLocationLabel(
+            place
+              ? `${place.name}${place.state ? `, ${place.state}` : ""} (OpenStreetMap)`
+              : nearbyStation
+                ? `Nearest mapped station: ${nearbyStation.point.name} (${nearbyStation.distanceKm.toFixed(1)} km away)`
+                : "Exact device coordinates"
+          );
+        });
       },
       () => {
+        if (requestId !== locationRequestRef.current) return;
         setGeoStatus("Location access denied or timed out. Search for your city or choose a station below.");
       },
       { timeout: 10000, enableHighAccuracy: true }
@@ -269,6 +285,7 @@ export default function HomePage() {
   };
 
   const selectGeocodedLocation = (place: GeocodedLocation) => {
+    locationRequestRef.current += 1;
     const region = [place.admin1, place.country].filter(Boolean).join(", ");
     setSelectedStation({
       name: region ? `${place.name}, ${region}` : place.name,
@@ -407,6 +424,7 @@ export default function HomePage() {
                 <button
                   key={stn.station_id}
                   onClick={() => {
+                    locationRequestRef.current += 1;
                     setLocationLabel(null);
                     setSelectedStation(stn);
                   }}

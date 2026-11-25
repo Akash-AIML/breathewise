@@ -46,6 +46,33 @@ export async function searchLocations(query: string): Promise<GeocodedLocation[]
   );
 }
 
+export interface ReverseGeocodedPlace {
+  name: string;
+  state?: string | null;
+  country?: string | null;
+  display_name?: string | null;
+  source: string;
+}
+
+/** Best-effort locality lookup. Returns null instead of breaking the location flow. */
+export async function fetchReverseGeocode(
+  lat: number,
+  lon: number
+): Promise<ReverseGeocodedPlace | null> {
+  const url = new URL(apiUrl("/api/v1/locations/reverse"));
+  url.searchParams.set("lat", lat.toString());
+  url.searchParams.set("lon", lon.toString());
+
+  try {
+    const response = await fetch(url.toString(), { headers: { Accept: "application/json" } });
+    if (!response.ok) return null;
+    const data = (await response.json()) as { place?: ReverseGeocodedPlace | null };
+    return data.place?.name ? data.place : null;
+  } catch {
+    return null;
+  }
+}
+
 export class ApiError extends Error {
   status: number;
   constructor(message: string, status: number) {

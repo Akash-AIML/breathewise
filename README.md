@@ -5,8 +5,8 @@
 > Public repository: https://github.com/Akash-AIML/breathewise — **not deployed**; see
 > [`docs/DEPLOYMENT_STATUS.md`](docs/DEPLOYMENT_STATUS.md).
 
-[![Backend Tests](https://img.shields.io/badge/Backend%20Tests-133%20passing-brightgreen)](backend/tests)
-[![Frontend Tests](https://img.shields.io/badge/Frontend%20Tests-51%20passing-brightgreen)](frontend/src/test)
+[![Backend Tests](https://img.shields.io/badge/Backend%20Tests-136%20passing-brightgreen)](backend/tests)
+[![Frontend Tests](https://img.shields.io/badge/Frontend%20Tests-54%20passing-brightgreen)](frontend/src/test)
 [![Coverage](https://img.shields.io/badge/Coverage-85%25-yellow)](docs/artifacts/coverage-html/index.html)
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-blue)](frontend)
 [![axe](https://img.shields.io/badge/axe-0%20violations-brightgreen)](docs/artifacts/axe-results.json)
@@ -35,7 +35,7 @@ BreatheWise helps Indian families navigate urban air pollution through:
 
 - **Genuine real-time air quality measurements** — CPCB/data.gov.in, OpenAQ, Open-Meteo CAMS (cascading failover)
 - **Location-aware station selection** — 10+ verified Indian CPCB stations with Haversine distance calculation
-- **Exact coordinates plus a readable place label** — “Use My Location” shows the device coordinates and the nearest known city/popular station as a label only; queries still use the exact coordinates
+- **Exact coordinates plus a readable place label** — “Use My Location” shows the device coordinates and a reverse-geocoded locality (OpenStreetMap Nominatim) as a label only; queries still use the exact coordinates. When reverse geocoding is unavailable, a popular-station label is used only within 25 km; distant cities are never reported as “near”.
 - **Personalized household recommendations** — deterministic policy engine tuned to your household's vulnerabilities
 - **Low-emission daily routines** — diurnal planning with temperature inversion and ozone dispersion modelling
 - **Indoor air quality guidance** — CADR calculator, filter maintenance, cooking smoke management
@@ -175,7 +175,7 @@ The complete list of CPCB pagination, timeout, freshness and cache settings is i
 ```bash
 cd backend
 source .venv/bin/activate
-pytest tests/ -q     # 133 passed, 2 live tests skipped by default
+pytest tests/ -q     # 136 passed, 2 live tests skipped by default
 RUN_LIVE_TESTS=1 pytest tests/integration -q -m live   # opt-in; requires network + keys
 coverage run -m pytest tests/ -q && coverage report --include='app/*'  # app code: 85%
 ```
@@ -190,7 +190,7 @@ Test categories:
 ```bash
 cd frontend
 npm run type-check   # TypeScript strict mode
-npm run test:ci      # Vitest + React Testing Library + axe; 51 passed
+npm run test:ci      # Vitest + React Testing Library + axe; 54 passed
 npm run build        # Production build; First Load JS 240 kB
 ```
 
@@ -242,6 +242,7 @@ Key endpoints:
 | GET | `/api/v1/air-quality/filters/verification` | Verified/unverified Chennai and Tamil Nadu filter probes |
 | GET | `/api/v1/stations?city=` | Live CPCB station search with labelled fallback |
 | GET | `/api/v1/locations/search?name=` | Same-origin geocoding proxy |
+| GET | `/api/v1/locations/reverse?lat=&lon=` | Cached, rate-limited reverse geocoding (Nominatim) |
 | GET | `/api/v1/stations/compare?ids=` | Multi-station comparison |
 | POST | `/api/v1/recommendations/plan` | Personalized daily plan |
 | POST | `/api/v1/recommendations/indoor` | Indoor air guidance + CADR |
