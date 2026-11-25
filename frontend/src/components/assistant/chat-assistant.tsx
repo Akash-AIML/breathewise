@@ -2,23 +2,13 @@
 
 import { useState, useRef, useEffect, KeyboardEvent } from "react";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { HouseholdProfile } from "@/types/recommendations";
+import { sendAssistantQuery } from "./assistant-api";
+import { AssistantMessage, MessageBubble } from "./message-bubble";
+import { QuickPrompts } from "./quick-prompts";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
-
-interface AssistantMessage {
-  id: string;
-  role: "user" | "assistant";
-  content: string;
-  aqi?: number | null;
-  riskLevel?: string;
-  actions?: string[];
-  rationale?: string;
-  llmGrounded?: boolean;
-  timestamp: Date;
-}
 
 interface ChatAssistantProps {
   lat: number;
@@ -26,132 +16,6 @@ interface ChatAssistantProps {
   currentAqi?: number | null;
   profile?: HouseholdProfile;
   className?: string;
-}
-
-// ─── Quick prompt chips ───────────────────────────────────────────────────────
-
-const QUICK_PROMPTS = [
-  { label: "🏃 Can I exercise outside?", query: "Is it safe to go jogging or exercise outdoors today?" },
-  { label: "👶 Kids safe outdoors?", query: "Is it safe for my children to play outside or go to school?" },
-  { label: "🌿 Do plants help?", query: "Can houseplants improve my indoor air quality?" },
-  { label: "🚇 Best commute option?", query: "What is the safest way to commute today?" },
-  { label: "😷 When to wear a mask?", query: "Should I wear an N95 mask today?" },
-  { label: "🏠 Indoor air tips?", query: "How can I improve my indoor air quality right now?" },
-];
-
-// ─── API Helper ───────────────────────────────────────────────────────────────
-
-async function sendAssistantQuery(
-  query: string,
-  lat: number,
-  lon: number,
-  profile?: HouseholdProfile
-) {
-  const res = await fetch("/api/v1/assistant/chat", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ query, lat, lon, profile: profile ?? {} }),
-  });
-  if (!res.ok) {
-    const err = (await res.json().catch(() => ({}))) as { message?: string; detail?: string };
-    throw new Error(err.message ?? err.detail ?? `HTTP ${res.status}`);
-  }
-  return res.json();
-}
-
-// ─── Risk badge colour (non-colour-only: text label always present) ───────────
-
-function RiskBadge({ level }: { level: string }) {
-  const map: Record<string, string> = {
-    low: "bg-green-100 text-green-800 border-green-300",
-    moderate: "bg-yellow-100 text-yellow-800 border-yellow-300",
-    high: "bg-orange-100 text-orange-800 border-orange-300",
-    very_high: "bg-red-100 text-red-800 border-red-300",
-    severe: "bg-purple-100 text-purple-800 border-purple-300",
-    hazardous: "bg-gray-900 text-white border-gray-700",
-  };
-  const cls = map[level.toLowerCase()] ?? "bg-gray-100 text-gray-800";
-  return (
-    <span
-      className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${cls}`}
-      aria-label={`Risk level: ${level.replace("_", " ")}`}
-    >
-      Risk: {level.replace("_", " ").toUpperCase()}
-    </span>
-  );
-}
-
-// ─── Single message bubble ────────────────────────────────────────────────────
-
-function MessageBubble({ msg }: { msg: AssistantMessage }) {
-  const isUser = msg.role === "user";
-  return (
-    <div
-      className={`flex ${isUser ? "justify-end" : "justify-start"} mb-3`}
-      role="listitem"
-    >
-      <div
-        className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-relaxed shadow-sm ${
-          isUser
-            ? "bg-blue-600 text-white rounded-br-sm"
-            : "bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-gray-100 rounded-bl-sm"
-        }`}
-      >
-        {/* Message text */}
-        <p className="whitespace-pre-wrap">{msg.content}</p>
-
-        {/* Grounding badges — only on assistant messages */}
-        {!isUser && (
-          <div className="mt-2 space-y-1.5">
-            {msg.aqi != null && (
-              <div className="flex flex-wrap gap-1.5 items-center">
-                <Badge variant="neutral" className="text-xs">
-                  AQI {msg.aqi}
-                </Badge>
-                {msg.riskLevel && <RiskBadge level={msg.riskLevel} />}
-                <span className="text-xs text-gray-500 dark:text-gray-400">
-                  {msg.llmGrounded ? "🤖 AI-explained" : "⚙️ Deterministic engine"}
-                </span>
-              </div>
-            )}
-
-            {/* Approved actions */}
-            {msg.actions && msg.actions.length > 0 && (
-              <details className="text-xs text-gray-600 dark:text-gray-400">
-                <summary className="cursor-pointer hover:text-blue-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 rounded">
-                  {msg.actions.length} recommended action{msg.actions.length > 1 ? "s" : ""}
-                </summary>
-                <ul className="mt-1 ml-3 space-y-0.5 list-disc">
-                  {msg.actions.map((a, i) => (
-                    <li key={i}>{a}</li>
-                  ))}
-                </ul>
-              </details>
-            )}
-
-            {/* Scientific rationale */}
-            {msg.rationale && (
-              <details className="text-xs text-gray-500 dark:text-gray-400">
-                <summary className="cursor-pointer hover:text-blue-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 rounded">
-                  Scientific rationale
-                </summary>
-                <p className="mt-1 ml-3 italic">{msg.rationale}</p>
-              </details>
-            )}
-          </div>
-        )}
-
-        <time
-          className={`block text-xs mt-1 ${
-            isUser ? "text-blue-200" : "text-gray-400 dark:text-gray-500"
-          }`}
-          dateTime={msg.timestamp.toISOString()}
-        >
-          {msg.timestamp.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-        </time>
-      </div>
-    </div>
-  );
 }
 
 // ─── Main Component ───────────────────────────────────────────────────────────
@@ -257,23 +121,7 @@ export function ChatAssistant({
       </div>
 
       {/* Quick prompts */}
-      <div
-        className="flex gap-2 px-3 py-2 overflow-x-auto scrollbar-thin border-b border-gray-100 dark:border-gray-800"
-        aria-label="Quick question suggestions"
-        role="toolbar"
-      >
-        {QUICK_PROMPTS.map((p) => (
-          <button
-            key={p.query}
-            onClick={() => handleSend(p.query)}
-            disabled={loading}
-            className="flex-shrink-0 text-xs bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-700 rounded-full px-3 py-1.5 hover:bg-blue-100 dark:hover:bg-blue-800 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
-            aria-label={`Quick question: ${p.label}`}
-          >
-            {p.label}
-          </button>
-        ))}
-      </div>
+      <QuickPrompts loading={loading} onSend={handleSend} />
 
       {/* Messages area */}
       <div

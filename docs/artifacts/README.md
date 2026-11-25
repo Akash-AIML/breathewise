@@ -40,9 +40,9 @@ Output (`pip-audit.txt`): `No known vulnerabilities found`.
 ## Coverage
 
 Commands:
-- `cd backend && .venv/bin/python -m coverage xml -o ../docs/artifacts/coverage.xml` — wrote 106,780-byte XML.
+- `cd backend && .venv/bin/python -m coverage xml -o ../docs/artifacts/coverage.xml` — wrote 131,159-byte XML.
 - `cd backend && .venv/bin/python -m coverage html -d ../docs/artifacts/coverage-html` — wrote `coverage-html/index.html`.
-Both files were regenerated from the final test run. `.venv/bin/python -m coverage report` shows **TOTAL 2909 statements, 296 missed, 90%** for all measured modules. The application-only figure is **85%** (1803 statements, 266 missed), measured with `.venv/bin/python -m coverage report --include='app/*'`. These are from the same measured run, not estimates.
+Both files were regenerated from the final test run after the code-quality module split. `.venv/bin/python -m coverage report` shows **TOTAL 3334 statements, 303 missed, 91%** for all measured modules. The application-only figure is **87%** (2025 statements, 271 missed), measured with `.venv/bin/python -m coverage report --include='app/*'`. These are from the same measured run, not estimates.
 
 ## Local performance (not production)
 

@@ -7,7 +7,7 @@
 
 [![Backend Tests](https://img.shields.io/badge/Backend%20Tests-143%20passing-brightgreen)](backend/tests)
 [![Frontend Tests](https://img.shields.io/badge/Frontend%20Tests-54%20passing-brightgreen)](frontend/src/test)
-[![Coverage](https://img.shields.io/badge/Coverage-86%25-yellow)](docs/artifacts/coverage-html/index.html)
+[![Coverage](https://img.shields.io/badge/Coverage-87%25-yellow)](docs/artifacts/coverage-html/index.html)
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-blue)](frontend)
 [![axe](https://img.shields.io/badge/axe-0%20violations-brightgreen)](docs/artifacts/axe-results.json)
 
@@ -180,7 +180,7 @@ cd backend
 source .venv/bin/activate
 pytest tests/ -q     # 143 passed, 2 live tests skipped by default
 RUN_LIVE_TESTS=1 pytest tests/integration -q -m live   # opt-in; requires network + keys
-coverage run -m pytest tests/ -q && coverage report --include='app/*'  # app code: 86%
+coverage run -m pytest tests/ -q && coverage report --include='app/*'  # app code: 87%
 ```
 
 Test categories:
@@ -194,7 +194,7 @@ Test categories:
 cd frontend
 npm run type-check   # TypeScript strict mode
 npm run test:ci      # Vitest + React Testing Library + axe; 54 passed
-npm run build        # Production build; First Load JS 240 kB
+npm run build        # Production build; First Load JS 241 kB
 ```
 
 All provider tests use mocked HTTP by default. Live tests are opt-in and are **not** part of CI.
