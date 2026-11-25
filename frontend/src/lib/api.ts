@@ -1,6 +1,7 @@
 import {
   AirQualityApiResponse,
   ComparisonApiResponse,
+  ComparisonPresetsResponse,
   StationsApiResponse,
 } from "@/types/observation";
 import {
@@ -156,6 +157,28 @@ export async function fetchStations(
   }
 
   return response.json();
+}
+
+export async function fetchComparisonPresets(): Promise<ComparisonPresetsResponse> {
+  const response = await fetchWithTimeout(apiUrl("/api/v1/stations/comparison-presets"), {
+    method: "GET",
+    headers: { Accept: "application/json" },
+  });
+
+  if (!response.ok) {
+    throw new ApiError(
+      safeErrorMessage("Failed to load comparison presets.", response.status),
+      response.status
+    );
+  }
+
+  const data = (await response.json()) as Partial<ComparisonPresetsResponse>;
+  return {
+    success: data.success ?? true,
+    source: data.source ?? "unknown",
+    presets: Array.isArray(data.presets) ? data.presets : [],
+    message: data.message ?? "",
+  };
 }
 
 export async function fetchStationComparison(stationIds: string[]): Promise<ComparisonApiResponse> {

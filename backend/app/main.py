@@ -58,6 +58,7 @@ app.add_middleware(
         "/api/v1/assistant/chat": settings.RATE_LIMIT_ASSISTANT_REQUESTS,
         "/api/v1/locations/search": settings.RATE_LIMIT_LOCATION_REQUESTS,
         "/api/v1/locations/reverse": settings.RATE_LIMIT_LOCATION_REQUESTS,
+        "/api/v1/stations/comparison-presets": settings.RATE_LIMIT_LOCATION_REQUESTS,
     },
     trusted_proxies=settings.TRUSTED_PROXY_IPS,
 )

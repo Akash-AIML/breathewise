@@ -11,6 +11,7 @@ const PROXIED_API_ROUTES = [
   '/api/v1/recommendations/plan',
   '/api/v1/recommendations/sustainable-alternatives',
   '/api/v1/stations',
+  '/api/v1/stations/comparison-presets',
   '/api/v1/stations/compare',
 ];
 

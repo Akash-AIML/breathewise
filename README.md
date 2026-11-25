@@ -252,7 +252,8 @@ Key endpoints:
 | GET | `/api/v1/stations?city=` | Live CPCB station search with labelled fallback |
 | GET | `/api/v1/locations/search?name=` | Same-origin geocoding proxy |
 | GET | `/api/v1/locations/reverse?lat=&lon=` | Cached, rate-limited reverse geocoding (Nominatim) |
-| GET | `/api/v1/stations/compare?ids=` | Multi-station comparison |
+| GET | `/api/v1/stations/comparison-presets` | Data-driven comparison presets from live stations, or labelled coordinate-grid estimates |
+| GET | `/api/v1/stations/compare?station_ids=` | Multi-station comparison; IDs come from `/comparison-presets` |
 | POST | `/api/v1/recommendations/plan` | Personalized daily plan |
 | POST | `/api/v1/recommendations/indoor` | Indoor air guidance + CADR |
 | POST | `/api/v1/recommendations/sustainable-alternatives` | Emission alternatives |
@@ -270,6 +271,7 @@ Key endpoints:
 6. **Station Coverage** — unfiltered CPCB pagination is bounded. A labelled static registry is used only when live station metadata is unavailable.
 7. **Offline LLM** — When no Groq/Gemini API key is configured, the deterministic fallback engine provides complete recommendations without LLM. This is by design.
 8. **Distributed rate limiting** — the in-memory default is per-process. An opt-in Redis store (`RATE_LIMIT_STORE=redis`) shares counters across instances and fails open on store errors; no live Redis instance was tested here. See [`docs/RATE_LIMITING.md`](docs/RATE_LIMITING.md).
+9. **Comparison presets** — when live CPCB station coordinates are unavailable, presets compare exact registered coordinates through the grid provider and are explicitly labelled `coordinate_estimate`. They are not physical CPCB station observations. See [`docs/STATION_COMPARISON_FIX_REPORT.md`](docs/STATION_COMPARISON_FIX_REPORT.md).
 
 ---
 

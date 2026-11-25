@@ -37,6 +37,10 @@
       "destination": "https://breathewise-backend.onrender.com/api/v1/stations"
     },
     {
+      "source": "/api/v1/stations/comparison-presets",
+      "destination": "https://breathewise-backend.onrender.com/api/v1/stations/comparison-presets"
+    },
+    {
       "source": "/api/v1/stations/compare",
       "destination": "https://breathewise-backend.onrender.com/api/v1/stations/compare"
     },

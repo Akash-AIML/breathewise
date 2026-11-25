@@ -98,9 +98,44 @@ export interface ComparisonDifferential {
   summary: string;
 }
 
+export type ComparisonBasis = "live_station" | "coordinate_estimate" | "mixed";
+
+export interface ComparisonCandidate {
+  id: string;
+  label: string;
+  city?: string | null;
+  state?: string | null;
+  latitude: number;
+  longitude: number;
+  basis: "live_station" | "coordinate_estimate";
+  source: string;
+}
+
+export interface ComparisonPreset {
+  key: string;
+  name: string;
+  description: string;
+  ids: string[];
+  basis: "live_station" | "coordinate_estimate";
+  source: string;
+  candidates: ComparisonCandidate[];
+}
+
+export interface ComparisonPresetsResponse {
+  success: boolean;
+  source: string;
+  presets: ComparisonPreset[];
+  message: string;
+}
+
 export interface ComparisonApiResponse {
   success: boolean;
   stations_count: number;
   observations: NormalizedObservation[];
   differential?: ComparisonDifferential | null;
+  basis?: ComparisonBasis;
+  source?: string;
+  requested_ids?: string[];
+  unresolved_ids?: string[];
+  message?: string;
 }

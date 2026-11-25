@@ -6,12 +6,12 @@
  RUN  v5.1.1 /home/akash/Projects/AirQuality/frontend
 
 
- Test Files  15 passed (15)
-      Tests  61 passed (61)
-   Start at  15:07:31
-   Duration  7.07s (environment 46%, tests 27%, import 19%, setup 6%, transform 2%, worker 1%)
+ Test Files  16 passed (16)
+      Tests  62 passed (62)
+   Start at  15:24:01
+   Duration  7.28s (environment 50%, tests 23%, import 19%, setup 6%, transform 1%, worker 1%)
 
-Environment  jsdom was created 15 times · 28.42s total, 46% of tracked time
+Environment  jsdom was created 16 times · 32.07s total, 50% of tracked time
              create it once per worker with pool: 'vmThreads' (keeps per-file isolation) or isolate: false (shares it across files)
              learn more: https://vitest.dev/guide/improving-performance#test-environments
 

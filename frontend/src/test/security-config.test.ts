@@ -30,6 +30,7 @@ describe("frontend security configuration", () => {
 
     expect(sources).toContain("/api/v1/air-quality");
     expect(sources).toContain("/api/v1/assistant/chat");
+    expect(sources).toContain("/api/v1/stations/comparison-presets");
     expect(sources).toContain("/api/v1/stations/compare");
     expect(sources).not.toContain("/api/:path*");
     for (const source of sources.filter((item: string) => item.startsWith("/api/"))) {

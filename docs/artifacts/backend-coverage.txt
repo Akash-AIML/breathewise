@@ -12,7 +12,7 @@ app/adapters/openmeteo.py                   146     16    89%   40, 61-62, 66-68
 app/api/__init__.py                           0      0   100%
 app/api/v1/endpoints/air_quality.py          22      6    73%   35-42, 48
 app/api/v1/endpoints/assistant.py            27      4    85%   29, 67-69
-app/api/v1/endpoints/comparison.py           48      4    92%   46, 60-61, 64
+app/api/v1/endpoints/comparison.py           43      3    93%   55-56, 108
 app/api/v1/endpoints/cpcb.py                 53      9    83%   36-37, 48, 75, 100-101, 103, 115-116
 app/api/v1/endpoints/health.py                9      2    78%   14-19
 app/api/v1/endpoints/locations.py           103     41    60%   30-84, 94, 110, 146, 153-155, 177-179
@@ -30,20 +30,21 @@ app/core/policy_plan.py                      25      1    96%   71
 app/core/policy_plan_sections.py             37      7    81%   45, 76, 104, 121, 149, 163, 232
 app/core/redaction.py                        40      2    95%   71, 73
 app/core/security.py                        151     18    88%   87, 127-138, 142, 157-161, 164-166, 232-234, 239
-app/main.py                                  39      5    87%   27-29, 101-102
+app/main.py                                  39      5    87%   27-29, 102-103
 app/schemas/__init__.py                       0      0   100%
 app/schemas/api.py                           24      0   100%
 app/schemas/assistant.py                     20      0   100%
-app/schemas/comparison.py                    15      0   100%
+app/schemas/comparison.py                    29      0   100%
 app/schemas/cpcb.py                          51      3    94%   44, 51, 58
 app/schemas/observation.py                   68      0   100%
 app/schemas/profile.py                       14      0   100%
 app/schemas/recommendation.py                27      0   100%
 app/services/__init__.py                      0      0   100%
 app/services/air_quality_service.py         113     11    90%   135, 169, 232-239, 276
+app/services/comparison_service.py          124     11    91%   50, 56, 67-70, 162-163, 169-170, 203, 233
 app/services/deterministic_assistant.py      47      7    85%   12, 99-104, 142-144
 app/services/llm_assistant_service.py       108      8    93%   154-162, 176-177, 222, 224, 226
 app/services/llm_providers.py                71      9    87%   31, 42-45, 85, 129, 141, 144
 app/services/llm_safety.py                   29      0   100%
 -----------------------------------------------------------------------
-TOTAL                                      2191    296    86%
+TOTAL                                      2324    306    87%
