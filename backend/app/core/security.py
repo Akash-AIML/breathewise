@@ -1,3 +1,4 @@
+import ipaddress
 import logging
 import math
 import time
@@ -28,6 +29,14 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
         response.headers["Permissions-Policy"] = "geolocation=(self), microphone=(), camera=()"
         response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+        response.headers["Cross-Origin-Opener-Policy"] = "same-origin"
+        response.headers["Cross-Origin-Resource-Policy"] = "same-origin"
+        response.headers["X-Permitted-Cross-Domain-Policies"] = "none"
+        # Exact coordinates and household profiles are personal data; shared
+        # caches must not store API responses. Application-level caching is
+        # intentionally unaffected.
+        if request.url.path.startswith("/api/") and "Cache-Control" not in response.headers:
+            response.headers["Cache-Control"] = "no-store"
         return response
 
 
@@ -183,12 +192,46 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         max_requests: int = 120,
         window_seconds: int = 60,
         store: RateLimitStore | None = None,
+        path_limits: Dict[str, int] | None = None,
+        trusted_proxies: List[str] | None = None,
     ):
         super().__init__(app)
         self.max_requests = max_requests
         self.window_seconds = window_seconds
         self.store = store if store is not None else create_rate_limit_store()
+        self.path_limits = path_limits or {}
+        self.trusted_proxies = set(trusted_proxies or settings.TRUSTED_PROXY_IPS)
+        # Expensive routes keep a local throttle when Redis is unavailable.
+        self._fallback_store = InMemoryRateLimitStore()
         self._store_ready = False
+
+    def _limit_for_path(self, path: str) -> tuple[str, int]:
+        """Return the bucket name and request ceiling for a request path."""
+        longest_match = ""
+        for prefix in sorted(self.path_limits, key=len, reverse=True):
+            if path == prefix or path.startswith(prefix.rstrip("/") + "/"):
+                longest_match = prefix
+                break
+        if longest_match:
+            return longest_match, self.path_limits[longest_match]
+        return "global", self.max_requests
+
+    def _client_ip(self, request: Request) -> str:
+        """Use forwarded headers only when the immediate peer is a trusted proxy."""
+        peer = request.client.host if request.client else "unknown"
+        if peer not in self.trusted_proxies:
+            return peer
+
+        forwarded = request.headers.get("x-forwarded-for")
+        candidates = forwarded.split(",") if forwarded else []
+        candidates.append(request.headers.get("x-real-ip", ""))
+        for candidate in candidates:
+            value = candidate.strip()
+            try:
+                return str(ipaddress.ip_address(value))
+            except ValueError:
+                continue
+        return peer
 
     @property
     def clients(self) -> Dict[str, List[float]]:
@@ -207,20 +250,27 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         if request.url.path in ("/health", "/api/v1/health"):
             return await call_next(request)
 
-        # Never trust a client-supplied IP header: it is trivially spoofable.
-        client_ip = request.client.host if request.client else "unknown"
+        client_ip = self._client_ip(request)
+        bucket, limit = self._limit_for_path(request.url.path)
+        # Separate buckets stop expensive routes from consuming the global quota
+        # and vice versa. The global bucket keeps its historical key format.
+        store_key = client_ip if bucket == "global" else f"{client_ip}:{bucket}"
         try:
             if not self._store_ready:
                 await self.store.setup()
                 self._store_ready = True
-            allowed, retry_after = await self.store.check(
-                client_ip, self.max_requests, self.window_seconds
-            )
+            allowed, retry_after = await self.store.check(store_key, limit, self.window_seconds)
         except Exception:
             # Do not log the exception: driver errors can embed REDIS_URL,
-            # including its password. Deliberately fail open (see docs).
-            logger.warning("Rate-limit store unavailable; allowing request (fail-open)")
-            return await call_next(request)
+            # including its password. Cheap reads fail open; a throttle outage
+            # must never remove the last guard on paid LLM/geocoding routes.
+            if bucket == "global":
+                logger.warning("Rate-limit store unavailable; allowing request (fail-open)")
+                return await call_next(request)
+            logger.warning("Rate-limit store unavailable; using local fallback for %s", bucket)
+            allowed, retry_after = await self._fallback_store.check(
+                store_key, limit, self.window_seconds
+            )
 
         if not allowed:
             return JSONResponse(

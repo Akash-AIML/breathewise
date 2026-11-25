@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import httpx
 
+from app.core.cache import bound_locks, enforce_limit, prune_expired
 from app.core.config import settings
 from app.schemas.cpcb import CPCBStationObservation
 from app.schemas.observation import DataQualityStatus
@@ -172,6 +173,7 @@ class CPCBTransportMixin:
             return None
         expires_at, value = entry
         if datetime.now(timezone.utc) >= expires_at:
+            self._cache.pop(key, None)
             return None
         if isinstance(value, list) and all(
             isinstance(item, CPCBStationObservation) for item in value
@@ -182,12 +184,19 @@ class CPCBTransportMixin:
     def _store(self, key: str, value: Any) -> None:
         expires = datetime.now(timezone.utc) + timedelta(seconds=settings.CPCB_CACHE_TTL_SECONDS)
         self._cache[key] = (expires, value)
+        prune_expired(self._cache, lambda entry: entry[0])
+        enforce_limit(self._cache, settings.CACHE_MAX_ENTRIES)
         if (
             isinstance(value, list)
             and value
             and all(isinstance(item, CPCBStationObservation) for item in value)
         ):
             self._last_valid[key] = (datetime.now(timezone.utc), value)
+            prune_expired(
+                self._last_valid,
+                lambda entry: entry[0] + timedelta(hours=settings.CPCB_LAST_VALID_MAX_HOURS),
+            )
+            enforce_limit(self._last_valid, settings.CACHE_MAX_ENTRIES)
 
     @staticmethod
     def _as_stale(
@@ -212,6 +221,7 @@ class CPCBTransportMixin:
         if datetime.now(timezone.utc) - saved_at > timedelta(
             hours=settings.CPCB_LAST_VALID_MAX_HOURS
         ):
+            self._last_valid.pop(key, None)
             return None
         return self._as_stale(observations, "Refresh failed; showing the last valid observation.")
 
@@ -277,6 +287,8 @@ class CPCBTransportMixin:
             return value
 
     def _lock_for(self, key: str) -> asyncio.Lock:
+        # Leave room for the new lock so the configured cap is exact.
+        bound_locks(self._locks, settings.CPCB_MAX_LOCKS - 1)
         if key not in self._locks:
             self._locks[key] = asyncio.Lock()
         return self._locks[key]

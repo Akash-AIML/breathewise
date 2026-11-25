@@ -156,18 +156,24 @@ Copy `.env.example` to `.env` in the project root (or `backend/`):
 | `GROQ_API_KEY` | No | Groq LLM API key (https://console.groq.com) |
 | `GEMINI_API_KEY` | No | Google Gemini API key (https://ai.google.dev) |
 | `GEMINI_MODELS` | No | Ordered free-tier model failover chain (default: Gemini 3.1 Flash Lite → Gemini 3.5 Flash Lite → Gemma 4 31B → Gemma 4 26B) |
-| `LLM_REQUEST_BUDGET_SECONDS` | No | Wall-clock ceiling for the whole chain (default: 20s) |
-| `GEMINI_MODEL_TIMEOUT_SECONDS` / `GEMMA_MODEL_TIMEOUT_SECONDS` | No | Per-model read timeouts (default: 7s / 12s) |
-| `CORS_ORIGINS` | Yes (prod) | JSON array of allowed frontend origins |
+| `LLM_REQUEST_BUDGET_SECONDS` | No | Wall-clock ceiling for the whole chain (default: 20s; frontend allows 25s) |
+| `GEMINI_MODEL_TIMEOUT_SECONDS` / `GEMMA_MODEL_TIMEOUT_SECONDS` | No | Per-model read timeouts (default: 10s / 12s) |
+| `CORS_ORIGINS` | Yes (prod) | JSON array of allowed frontend origins; wildcard and non-HTTPS production origins are rejected |
+| `RATE_LIMIT_MAX_REQUESTS` / `RATE_LIMIT_WINDOW_SECONDS` | No | Global per-IP limit (default: 120 / 60s) |
+| `RATE_LIMIT_ASSISTANT_REQUESTS` / `RATE_LIMIT_LOCATION_REQUESTS` | No | Dedicated expensive-route limits (default: 10 / 20 per minute) |
+| `TRUSTED_PROXY_IPS` | No | JSON array of proxy peers allowed to supply forwarded-IP headers (default: `[]`) |
+| `CACHE_MAX_ENTRIES` / `CPCB_MAX_LOCKS` | No | Bounds for attacker-controlled cache keys and per-key locks |
 | `ENVIRONMENT` | No | `development` or `production` |
 | `CACHE_TTL_SECONDS` | No | Observation cache TTL (default: 900s) |
-| `BACKEND_URL` | Frontend | URL of backend for Next.js rewrites |
+| `BACKEND_URL` | Frontend | URL of backend for the explicit Next.js rewrite allowlist |
 
 The complete list of CPCB pagination, timeout, freshness and cache settings is in
 [`docs/CPCB_INTEGRATION.md`](docs/CPCB_INTEGRATION.md); rate-limit store settings are in
 [`docs/RATE_LIMITING.md`](docs/RATE_LIMITING.md).
 
 > **Security:** Never commit `.env`. All AI keys are server-side only. Frontend never receives API keys.
+> Logs and HTTP error details are sanitised with configured-secret redaction; `chmod 600 .env`
+> is recommended for local workstations. See [`docs/SECURITY_HARDENING_REPORT.md`](docs/SECURITY_HARDENING_REPORT.md).
 
 ---
 
@@ -178,9 +184,9 @@ The complete list of CPCB pagination, timeout, freshness and cache settings is i
 ```bash
 cd backend
 source .venv/bin/activate
-pytest tests/ -q     # 143 passed, 2 live tests skipped by default
+pytest tests/ -q     # 155 passed, 2 live tests skipped by default
 RUN_LIVE_TESTS=1 pytest tests/integration -q -m live   # opt-in; requires network + keys
-coverage run -m pytest tests/ -q && coverage report --include='app/*'  # app code: 87%
+coverage run -m pytest tests/ -q && coverage report --include='app/*'  # app code: 86%
 ```
 
 Test categories:
@@ -193,8 +199,8 @@ Test categories:
 ```bash
 cd frontend
 npm run type-check   # TypeScript strict mode
-npm run test:ci      # Vitest + React Testing Library + axe; 54 passed
-npm run build        # Production build; First Load JS 241 kB
+npm run test:ci      # Vitest + React Testing Library + axe; 61 passed
+npm run build        # Next 16 production build; / first-load JS diagnostics: 975,893 B raw / 269,865 B gzip
 ```
 
 All provider tests use mocked HTTP by default. Live tests are opt-in and are **not** part of CI.

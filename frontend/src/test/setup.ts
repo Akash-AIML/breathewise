@@ -1,4 +1,4 @@
-import "@testing-library/jest-dom";
+import "@testing-library/jest-dom/vitest";
 import "vitest-axe/extend-expect";
 import * as matchers from "vitest-axe/matchers";
 import { expect } from "vitest";
@@ -6,10 +6,13 @@ import { expect } from "vitest";
 // Register the vitest-axe matcher (toHaveNoViolations) for all frontend tests.
 expect.extend(matchers);
 
-// vitest-axe 0.1.0 augments the legacy `Vi.Assertion` namespace; Vitest 2 uses
-// @vitest/expect instead, so add the matching type declaration here.
-declare module "@vitest/expect" {
-  interface Assertion<T = any> {
+// vitest-axe 0.1.0 augments the legacy `Vi.Assertion` namespace. Vitest 5
+// exposes its matcher types from `vitest`, so declare the matcher there.
+declare module "vitest" {
+  interface Matchers<
+    R extends void | Promise<void> = void | Promise<void>,
+    T = unknown
+  > {
     toHaveNoViolations(): void;
   }
 }

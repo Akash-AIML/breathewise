@@ -41,7 +41,7 @@ unavailable at probe time, and the Gemma models require special output parsing.
 - `backend/app/core/config.py`
   - `GEMINI_MODELS` — ordered chain
   - `LLM_REQUEST_BUDGET_SECONDS = 20.0` — whole-chain wall-clock ceiling, below
-    the frontend proxy timeout
+    the 25s frontend assistant timeout (5s headroom for proxy/network overhead)
   - `GEMINI_MODEL_TIMEOUT_SECONDS = 10.0`, `GEMMA_MODEL_TIMEOUT_SECONDS = 12.0`
 - `backend/app/services/llm_assistant_service.py`
   - `_gemini_model_chain()` de-duplicates while preserving priority order

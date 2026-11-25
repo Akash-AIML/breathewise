@@ -9,6 +9,7 @@ from fastapi.responses import JSONResponse
 
 from app.api.v1.router import api_router
 from app.core.config import settings
+from app.core.redaction import install_secret_redaction, redact_text
 from app.core.security import RateLimitMiddleware, SecurityHeadersMiddleware
 from app.schemas.api import ErrorDetail, ErrorResponse, HealthResponse
 
@@ -18,6 +19,7 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
 logger = logging.getLogger("breathewise")
+install_secret_redaction()
 
 
 @asynccontextmanager
@@ -42,13 +44,23 @@ app.add_middleware(
     allow_origins=settings.CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["GET", "POST", "OPTIONS"],
-    allow_headers=["*"],
+    allow_headers=["Accept", "Content-Type", "X-Requested-With"],
     expose_headers=["Retry-After"],
 )
 
 # 2. Security Middleware
 app.add_middleware(SecurityHeadersMiddleware)
-app.add_middleware(RateLimitMiddleware, max_requests=120, window_seconds=60)
+app.add_middleware(
+    RateLimitMiddleware,
+    max_requests=settings.RATE_LIMIT_MAX_REQUESTS,
+    window_seconds=settings.RATE_LIMIT_WINDOW_SECONDS,
+    path_limits={
+        "/api/v1/assistant/chat": settings.RATE_LIMIT_ASSISTANT_REQUESTS,
+        "/api/v1/locations/search": settings.RATE_LIMIT_LOCATION_REQUESTS,
+        "/api/v1/locations/reverse": settings.RATE_LIMIT_LOCATION_REQUESTS,
+    },
+    trusted_proxies=settings.TRUSTED_PROXY_IPS,
+)
 
 
 # 3. Global Exception Handlers
@@ -79,7 +91,7 @@ async def http_exception_handler(request: Request, exc: HTTPException):
         content=ErrorResponse(
             success=False,
             error_code=f"HTTP_{exc.status_code}",
-            message=str(exc.detail),
+            message=redact_text(exc.detail),
         ).model_dump(),
     )
 

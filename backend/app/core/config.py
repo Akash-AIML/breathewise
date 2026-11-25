@@ -1,6 +1,8 @@
+import ipaddress
 from pathlib import Path
 from typing import Optional
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # app/core/config.py -> backend/app/core -> backend/app -> backend -> repo root
@@ -43,11 +45,19 @@ class Settings(BaseSettings):
 
     # Rate limiting: memory is zero-config; redis is opt-in and shared across processes
     RATE_LIMIT_STORE: str = "memory"  # "memory" or "redis"
+    RATE_LIMIT_MAX_REQUESTS: int = 120
+    RATE_LIMIT_WINDOW_SECONDS: int = 60
+    # Expensive endpoints get a tighter bucket in addition to the global limit.
+    RATE_LIMIT_ASSISTANT_REQUESTS: int = 10
+    RATE_LIMIT_LOCATION_REQUESTS: int = 20
     REDIS_URL: str = "redis://localhost:6379/0"
     REDIS_SOCKET_CONNECT_TIMEOUT_SECONDS: float = 0.1
     REDIS_SOCKET_TIMEOUT_SECONDS: float = 0.2
     REDIS_MAX_CONNECTIONS: int = 10
     CACHE_TTL_SECONDS: int = 900  # 15 minutes cache to avoid redundant API hits
+    CACHE_MAX_ENTRIES: int = 1000  # bound attacker-controlled coordinate keys
+    CPCB_MAX_LOCKS: int = 500
+    API_MAX_PAGE_SIZE: int = 500  # server-enforced ceiling for list endpoints
     STALE_DATA_THRESHOLD_HOURS: int = 6
 
     # CPCB / data.gov.in integration
@@ -75,6 +85,23 @@ class Settings(BaseSettings):
 
     # CORS
     CORS_ORIGINS: list[str] = ["http://localhost:3000", "http://127.0.0.1:3000"]
+    # Only these peers may supply X-Forwarded-For / X-Real-IP. Empty is safest.
+    TRUSTED_PROXY_IPS: list[str] = []
+
+    @model_validator(mode="after")
+    def validate_security_settings(self):
+        if "*" in self.CORS_ORIGINS:
+            raise ValueError("Wildcard CORS origins are not allowed with credentials")
+        if self.ENVIRONMENT.lower() == "production":
+            for origin in self.CORS_ORIGINS:
+                if not origin.startswith("https://"):
+                    raise ValueError("Production CORS origins must use HTTPS")
+        for address in self.TRUSTED_PROXY_IPS:
+            try:
+                ipaddress.ip_address(address)
+            except ValueError as exc:
+                raise ValueError(f"Invalid TRUSTED_PROXY_IPS entry: {address}") from exc
+        return self
 
     model_config = SettingsConfigDict(
         env_file=str(ENV_FILE),

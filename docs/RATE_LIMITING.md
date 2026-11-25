@@ -4,8 +4,14 @@ The API rate limiter is a `RateLimitMiddleware` in `backend/app/core/security.py
 requests per client IP and returns HTTP 429 with `error_code=RATE_LIMIT_EXCEEDED` and a
 `Retry-After` header when the limit is reached. `/health` and `/api/v1/health` are exempt.
 
-Only `request.client.host` is used as the client identity; client-supplied IP headers are
-ignored because they are trivially spoofable.
+Expensive routes use separate buckets: `/api/v1/assistant/chat` (default 10/min/IP) and
+`/api/v1/locations/search` / `/api/v1/locations/reverse` (default 20/min/IP) no longer consume
+the global 120/min/IP allowance. This limits LLM/geocoding quota abuse without throttling
+ordinary air-quality reads.
+
+Client identity is `request.client.host` by default. `X-Forwarded-For` and `X-Real-IP` are
+honoured **only** when the immediate peer is listed in `TRUSTED_PROXY_IPS`; otherwise the
+headers are ignored because they are trivially spoofable.
 
 ## Configuration
 
@@ -16,6 +22,11 @@ ignored because they are trivially spoofable.
 | `REDIS_SOCKET_CONNECT_TIMEOUT_SECONDS` | `0.1` | Bounded connection timeout. |
 | `REDIS_SOCKET_TIMEOUT_SECONDS` | `0.2` | Bounded socket read/write timeout. |
 | `REDIS_MAX_CONNECTIONS` | `10` | Bound on the async connection pool. |
+| `RATE_LIMIT_MAX_REQUESTS` | `120` | Global per-client ceiling per window. |
+| `RATE_LIMIT_WINDOW_SECONDS` | `60` | Fixed-window length in seconds. |
+| `RATE_LIMIT_ASSISTANT_REQUESTS` | `10` | Dedicated assistant/chat ceiling. |
+| `RATE_LIMIT_LOCATION_REQUESTS` | `20` | Dedicated geocoding ceiling. |
+| `TRUSTED_PROXY_IPS` | `[]` | Peers allowed to supply forwarded-IP headers; validate as IP addresses at startup. |
 
 Set these as environment variables (or in the backend-local `.env`). An unknown
 `RATE_LIMIT_STORE` raises a startup error rather than silently changing behavior.
@@ -25,8 +36,10 @@ The default memory store needs no extra package. For the Redis store, install
 lazily inside `RedisRateLimitStore.setup()`, so the application never imports Redis when the
 memory store is selected.
 
-The middleware still takes `max_requests` and `window_seconds` arguments (defaults 120 and 60
-seconds, as configured in `backend/app/main.py`). A custom store can be injected for tests.
+The middleware still takes `max_requests`, `window_seconds`, optional `path_limits`, and
+optional `trusted_proxies` arguments (configured in `backend/app/main.py` from settings). A
+custom store can be injected for tests. Keys are `ratelimit:<ip>` for the global bucket and
+`ratelimit:<ip>:<path-prefix>` for dedicated buckets.
 
 ## Semantics
 
@@ -40,14 +53,14 @@ seconds, as configured in `backend/app/main.py`). A custom store can be injected
   so counters do not leak. The returned TTL is used directly in `Retry-After`.
 - `RateLimitMiddleware.dispatch` always awaits the store's `check` method.
 
-## Redis outage policy: fail-open
+## Redis outage policy: fail-open for cheap reads, local throttle for expensive routes
 
 If the store's `setup` or `check` raises (Redis down, timeout, missing driver, etc.), the
-request is allowed through and a generic warning is logged. This keeps a rate-limiter outage
-from becoming a full API outage; the trade-off is that abusive traffic is temporarily not
-throttled while Redis is unavailable. The same policy applies to any store error. The log
-message intentionally excludes the exception details because driver errors can embed
-`REDIS_URL` and its password.
+global bucket allows the request and logs a generic warning. This keeps a rate-limiter outage
+from becoming a full API outage. For the assistant and location buckets, the middleware falls
+back to an in-memory store so a shared-store outage cannot remove the last guard on paid or
+quota-limited providers. The log message intentionally excludes the exception details because
+driver errors can embed `REDIS_URL` and its password.
 
 ## Verification status and tests
 
@@ -56,9 +69,13 @@ Unit tests in `backend/tests/unit/test_security_rate_limit.py` use a fake async 
 - in-memory store still enforces the limit and `reset()` clears it;
 - Redis store issues one atomic `eval` per request, uses the Lua `INCR`/`PEXPIRE`/`PTTL`
   script, passes the window as milliseconds, and uses the TTL for `Retry-After`;
-- a simulated Redis connection failure results in requests being allowed (fail-open) and no
-  credentials in the logs;
+- a simulated Redis connection failure results in cheap global requests being allowed
+  (fail-open) with no credentials in the logs;
 - config selects the expected store, and an unknown store value is rejected.
+
+`backend/tests/unit/test_security_hardening.py` additionally verifies dedicated path buckets,
+trusted-proxy handling, the local fallback throttle on an expensive route during a Redis
+outage, unsafe CORS/trusted-proxy config rejection, and API security headers.
 
 **Live Redis was not verified in this environment.** No Redis server was started and no
 integration test against a real Redis instance was run; the Redis path is validated only with

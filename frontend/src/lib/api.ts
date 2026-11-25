@@ -10,13 +10,37 @@ import {
   SustainableAlternative,
 } from "@/types/recommendations";
 
-// Empty default keeps production requests on the deployment origin, where
-// /api/v1 is proxied to the backend. A separate host is opt-in via env var.
-const API_BASE_URL = (process.env.NEXT_PUBLIC_API_BASE_URL ?? "").replace(/\/$/, "");
+// Empty default keeps production requests on the deployment origin, where the
+// explicit rewrite allowlist proxies /api/v1 to the backend. A remote base URL
+// is ignored in production so a public NEXT_PUBLIC_* value cannot redirect
+// coordinates or household profiles to a third-party host.
+const configuredBaseUrl = (process.env.NEXT_PUBLIC_API_BASE_URL ?? "").replace(/\/$/, "");
+const isProduction = process.env.NEXT_PUBLIC_APP_ENV === "production" || process.env.NODE_ENV === "production";
+const API_BASE_URL =
+  isProduction && configuredBaseUrl && !configuredBaseUrl.startsWith("/") ? "" : configuredBaseUrl;
+
+const REQUEST_TIMEOUT_MS = 15000;
 
 function apiUrl(path: string): string {
   const origin = typeof window === "undefined" ? "http://localhost" : window.location.origin;
   return new URL(`${API_BASE_URL}${path}`, origin).toString();
+}
+
+async function fetchWithTimeout(url: string, init: RequestInit = {}): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** Never render raw upstream error text in the UI: it is untrusted content. */
+function safeErrorMessage(fallback: string, status: number): string {
+  if (status === 429) return "Too many requests. Please wait a moment and try again.";
+  if (status >= 500) return `${fallback} The service is temporarily unavailable.`;
+  return fallback;
 }
 
 export interface GeocodedLocation {
@@ -36,7 +60,7 @@ export async function searchLocations(query: string): Promise<GeocodedLocation[]
   const url = new URL(apiUrl("/api/v1/locations/search"));
   url.searchParams.set("name", trimmed);
 
-  const response = await fetch(url.toString(), { headers: { Accept: "application/json" } });
+  const response = await fetchWithTimeout(url.toString(), { headers: { Accept: "application/json" } });
   if (!response.ok) {
     throw new ApiError("Location search is temporarily unavailable.", response.status);
   }
@@ -64,7 +88,7 @@ export async function fetchReverseGeocode(
   url.searchParams.set("lon", lon.toString());
 
   try {
-    const response = await fetch(url.toString(), { headers: { Accept: "application/json" } });
+    const response = await fetchWithTimeout(url.toString(), { headers: { Accept: "application/json" } });
     if (!response.ok) return null;
     const data = (await response.json()) as { place?: ReverseGeocodedPlace | null };
     return data.place?.name ? data.place : null;
@@ -90,18 +114,19 @@ export async function fetchAirQuality(
   const url = new URL(apiUrl("/api/v1/air-quality"));
   url.searchParams.append("lat", lat.toString());
   url.searchParams.append("lon", lon.toString());
-  if (bypassCache) {
+  // Production intentionally forbids cache bypass; do not waste a request on a
+  // 403 the backend will always return.
+  if (bypassCache && !isProduction) {
     url.searchParams.append("bypass_cache", "true");
   }
 
-  const response = await fetch(url.toString(), {
+  const response = await fetchWithTimeout(url.toString(), {
     method: "GET",
     headers: { Accept: "application/json" },
   });
 
   if (!response.ok) {
-    const errorBody = await response.json().catch(() => ({}));
-    throw new ApiError(errorBody.message || "Failed to fetch air quality data.", response.status);
+    throw new ApiError(safeErrorMessage("Failed to fetch air quality data.", response.status), response.status);
   }
 
   return response.json();
@@ -121,14 +146,13 @@ export async function fetchStations(
     url.searchParams.append("lon", lon.toString());
   }
 
-  const response = await fetch(url.toString(), {
+  const response = await fetchWithTimeout(url.toString(), {
     method: "GET",
     headers: { Accept: "application/json" },
   });
 
   if (!response.ok) {
-    const errorBody = await response.json().catch(() => ({}));
-    throw new ApiError(errorBody.message || "Failed to fetch monitoring stations.", response.status);
+    throw new ApiError(safeErrorMessage("Failed to fetch monitoring stations.", response.status), response.status);
   }
 
   return response.json();
@@ -138,14 +162,13 @@ export async function fetchStationComparison(stationIds: string[]): Promise<Comp
   const url = new URL(apiUrl("/api/v1/stations/compare"));
   url.searchParams.append("station_ids", stationIds.join(","));
 
-  const response = await fetch(url.toString(), {
+  const response = await fetchWithTimeout(url.toString(), {
     method: "GET",
     headers: { Accept: "application/json" },
   });
 
   if (!response.ok) {
-    const errorBody = await response.json().catch(() => ({}));
-    throw new ApiError(errorBody.message || "Failed to compare stations.", response.status);
+    throw new ApiError(safeErrorMessage("Failed to compare stations.", response.status), response.status);
   }
 
   return response.json();
@@ -156,7 +179,7 @@ export async function fetchPersonalizedPlan(
   lon: number,
   profile: HouseholdProfile
 ): Promise<PersonalizedPlan> {
-  const response = await fetch(apiUrl("/api/v1/recommendations/plan"), {
+  const response = await fetchWithTimeout(apiUrl("/api/v1/recommendations/plan"), {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -166,8 +189,7 @@ export async function fetchPersonalizedPlan(
   });
 
   if (!response.ok) {
-    const errorBody = await response.json().catch(() => ({}));
-    throw new ApiError(errorBody.message || "Failed to generate personalized plan.", response.status);
+    throw new ApiError(safeErrorMessage("Failed to generate personalized plan.", response.status), response.status);
   }
 
   return response.json();
@@ -183,7 +205,7 @@ export async function fetchIndoorGuidance(
     url.searchParams.append("aqi", aqi.toString());
   }
 
-  const response = await fetch(url.toString(), {
+  const response = await fetchWithTimeout(url.toString(), {
     method: "GET",
     headers: { Accept: "application/json" },
   });
@@ -203,7 +225,7 @@ export async function fetchSustainableAlternatives(
     url.searchParams.append("aqi", aqi.toString());
   }
 
-  const response = await fetch(url.toString(), {
+  const response = await fetchWithTimeout(url.toString(), {
     method: "GET",
     headers: { Accept: "application/json" },
   });

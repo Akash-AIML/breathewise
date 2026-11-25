@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import httpx
 from fastapi import APIRouter, HTTPException, Query, status
 
+from app.core.cache import bound_locks, enforce_limit, prune_expired
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -19,7 +20,8 @@ REVERSE_MIN_INTERVAL_SECONDS = 1.1
 REVERSE_CACHE_TTL_SECONDS = 3600
 
 _reverse_cache: Dict[Tuple[float, float], Tuple[datetime, Optional[Dict[str, Any]]]] = {}
-_reverse_lock = asyncio.Lock()
+_reverse_locks: Dict[Tuple[float, float], asyncio.Lock] = {}
+_pace_lock = asyncio.Lock()
 _last_reverse_request: Optional[datetime] = None
 
 
@@ -59,13 +61,27 @@ async def fetch_geocoding(name: str) -> List[Dict[str, Any]]:
     results = payload.get("results") if isinstance(payload, dict) else None
     if not isinstance(results, list):
         return []
-    return [
-        item
-        for item in results
-        if isinstance(item, dict)
-        and isinstance(item.get("latitude"), (int, float))
-        and isinstance(item.get("longitude"), (int, float))
-    ]
+    # Do not relay arbitrary provider fields to the browser.
+    allowed = ("id", "name", "latitude", "longitude", "admin1", "country")
+    cleaned: List[Dict[str, Any]] = []
+    for item in results:
+        if not isinstance(item, dict):
+            continue
+        if not (
+            isinstance(item.get("latitude"), (int, float))
+            and isinstance(item.get("longitude"), (int, float))
+        ):
+            continue
+        entry = {}
+        for field in allowed:
+            value = item.get(field)
+            if isinstance(value, str):
+                entry[field] = value[:100]
+            elif field in ("latitude", "longitude", "id") and isinstance(value, (int, float)):
+                entry[field] = value
+        if entry.get("name"):
+            cleaned.append(entry)
+    return cleaned
 
 
 @router.get("/search")
@@ -73,7 +89,13 @@ async def search_locations(
     name: str = Query(..., min_length=2, max_length=100, description="City or locality name"),
 ) -> Dict[str, Any]:
     """Resolve a place name to exact coordinates through the backend proxy."""
-    results = await fetch_geocoding(name.strip())
+    cleaned_name = name.strip()
+    if len(cleaned_name) < 2:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Location name must contain at least 2 non-whitespace characters.",
+        )
+    results = await fetch_geocoding(cleaned_name)
     return {"results": results}
 
 
@@ -109,17 +131,29 @@ async def fetch_reverse_geocoding(lat: float, lon: float) -> Optional[Dict[str, 
     """Resolve exact coordinates to a locality name. Never blocks the UI on failure."""
     global _last_reverse_request
     key = _reverse_cache_key(lat, lon)
-    async with _reverse_lock:
+
+    cached = _reverse_cache.get(key)
+    if cached and datetime.now(timezone.utc) < cached[0]:
+        return cached[1]
+
+    # Per-key coalescing: different locations do not queue behind one global
+    # lock, while repeated lookups for the same key share a single provider call.
+    bound_locks(_reverse_locks, settings.CACHE_MAX_ENTRIES - 1)
+    key_lock = _reverse_locks.setdefault(key, asyncio.Lock())
+    async with key_lock:
         cached = _reverse_cache.get(key)
         if cached and datetime.now(timezone.utc) < cached[0]:
             return cached[1]
 
-        now = datetime.now(timezone.utc)
-        if _last_reverse_request is not None:
-            elapsed = (now - _last_reverse_request).total_seconds()
-            if elapsed < REVERSE_MIN_INTERVAL_SECONDS:
-                await asyncio.sleep(REVERSE_MIN_INTERVAL_SECONDS - elapsed)
-        _last_reverse_request = datetime.now(timezone.utc)
+        # Nominatim asks for at most one request/second. Only the pacing
+        # decision is serialized; the HTTP call below is not.
+        async with _pace_lock:
+            now = datetime.now(timezone.utc)
+            if _last_reverse_request is not None:
+                elapsed = (now - _last_reverse_request).total_seconds()
+                if elapsed < REVERSE_MIN_INTERVAL_SECONDS:
+                    await asyncio.sleep(REVERSE_MIN_INTERVAL_SECONDS - elapsed)
+            _last_reverse_request = datetime.now(timezone.utc)
 
         place: Optional[Dict[str, Any]] = None
         try:
@@ -148,6 +182,8 @@ async def fetch_reverse_geocoding(lat: float, lon: float) -> Optional[Dict[str, 
             datetime.now(timezone.utc) + timedelta(seconds=REVERSE_CACHE_TTL_SECONDS),
             place,
         )
+        prune_expired(_reverse_cache, lambda entry: entry[0])
+        enforce_limit(_reverse_cache, settings.CACHE_MAX_ENTRIES)
         return place
 
 

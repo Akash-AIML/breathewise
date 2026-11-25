@@ -3,7 +3,13 @@ node_modules/
 __pycache__/
 *.pyc
 .env
-.env.local
+.env.*
+!.env.example
+*.pem
+*.key
+id_rsa*
+.npmrc
+.netrc
 .pytest_cache/
 .coverage
 htmlcov/

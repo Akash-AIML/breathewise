@@ -3,6 +3,7 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException, Query, status
 
 from app.adapters.cpcb import CPCBProviderError
+from app.core.config import settings
 from app.core.geo import haversine_distance_km
 from app.schemas.cpcb import (
     CPCBFiltersResponse,
@@ -27,8 +28,9 @@ async def get_nearby_cpcb_observations(
     lat: float = Query(..., ge=-90.0, le=90.0),
     lon: float = Query(..., ge=-180.0, le=180.0),
     max_distance_km: float = Query(50.0, ge=1.0, le=500.0),
+    limit: int = Query(100, ge=1, le=settings.API_MAX_PAGE_SIZE),
 ) -> CPCBObservationsResponse:
-    """Return every CPCB station observation near the supplied exact coordinates."""
+    """Return the nearest CPCB station observations for exact coordinates."""
     try:
         observations = await air_quality_service.cpcb_adapter.get_station_observations()
     except CPCBProviderError:
@@ -40,6 +42,7 @@ async def get_nearby_cpcb_observations(
         if distance <= max_distance_km:
             nearby.append((distance, observation.model_copy(update={"distance_km": distance})))
     nearby.sort(key=lambda item: item[0])
+    nearby = nearby[:limit]
 
     if not nearby:
         return CPCBObservationsResponse(
@@ -65,6 +68,7 @@ async def get_nearby_cpcb_observations(
 async def get_cpcb_summary(
     city: Optional[str] = Query(None, max_length=100),
     state: Optional[str] = Query(None, max_length=100),
+    limit: int = Query(100, ge=1, le=settings.API_MAX_PAGE_SIZE),
 ) -> CPCBObservationsResponse:
     """Return CPCB station observations for a city and/or state."""
     if not city and not state:
@@ -79,10 +83,11 @@ async def get_cpcb_summary(
     except CPCBProviderError:
         raise _unavailable("CPCB observations are temporarily unavailable.")
 
+    page = observations[:limit]
     return CPCBObservationsResponse(
         success=True,
-        count=len(observations),
-        data=observations,
+        count=len(page),
+        data=page,
         message="Source: CPCB / data.gov.in. Pollutant averages are not labelled as AQI.",
     )
 

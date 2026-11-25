@@ -1,0 +1,49 @@
+Name                                      Stmts   Miss  Cover   Missing
+-----------------------------------------------------------------------
+app/__init__.py                               0      0   100%
+app/adapters/__init__.py                      0      0   100%
+app/adapters/base.py                         18      4    78%   14, 20, 27, 34
+app/adapters/cpcb.py                         77     28    64%   62, 71, 75, 82-102, 111-113, 124, 132-148, 153-156, 164
+app/adapters/cpcb_parsing.py                139      8    94%   62, 114, 124, 165-166, 201-202, 228
+app/adapters/cpcb_queries.py                 83     20    76%   40, 64-85, 102-107
+app/adapters/cpcb_transport.py              185     18    90%   55, 100, 103-106, 115, 123, 126, 132, 168, 182, 224-225, 233-234, 238, 270
+app/adapters/openaq.py                      103     53    49%   49, 58-97, 102-132, 144, 148, 156-158, 173-174, 177
+app/adapters/openmeteo.py                   146     16    89%   40, 61-62, 66-68, 73, 81-82, 88, 91-92, 100, 104, 198, 220
+app/api/__init__.py                           0      0   100%
+app/api/v1/endpoints/air_quality.py          22      6    73%   35-42, 48
+app/api/v1/endpoints/assistant.py            27      4    85%   29, 67-69
+app/api/v1/endpoints/comparison.py           48      4    92%   46, 60-61, 64
+app/api/v1/endpoints/cpcb.py                 53      9    83%   36-37, 48, 75, 100-101, 103, 115-116
+app/api/v1/endpoints/health.py                9      2    78%   14-19
+app/api/v1/endpoints/locations.py           103     41    60%   30-84, 94, 110, 146, 153-155, 177-179
+app/api/v1/endpoints/recommendations.py      32      1    97%   47
+app/api/v1/endpoints/stations.py             23      1    96%   39
+app/api/v1/router.py                         11      0   100%
+app/core/__init__.py                          0      0   100%
+app/core/aqi_calculator.py                   65      3    95%   84, 88, 110
+app/core/cache.py                            17      0   100%
+app/core/config.py                           67      0   100%
+app/core/geo.py                               8      0   100%
+app/core/policy_engine.py                    35      5    86%   45-46, 51-52, 65
+app/core/policy_guidance.py                  41      2    95%   25-26
+app/core/policy_plan.py                      25      1    96%   71
+app/core/policy_plan_sections.py             37      7    81%   45, 76, 104, 121, 149, 163, 232
+app/core/redaction.py                        40      2    95%   71, 73
+app/core/security.py                        151     18    88%   87, 127-138, 142, 157-161, 164-166, 232-234, 239
+app/main.py                                  39      5    87%   27-29, 101-102
+app/schemas/__init__.py                       0      0   100%
+app/schemas/api.py                           24      0   100%
+app/schemas/assistant.py                     20      0   100%
+app/schemas/comparison.py                    15      0   100%
+app/schemas/cpcb.py                          51      3    94%   44, 51, 58
+app/schemas/observation.py                   68      0   100%
+app/schemas/profile.py                       14      0   100%
+app/schemas/recommendation.py                27      0   100%
+app/services/__init__.py                      0      0   100%
+app/services/air_quality_service.py         113     11    90%   135, 169, 232-239, 276
+app/services/deterministic_assistant.py      47      7    85%   12, 99-104, 142-144
+app/services/llm_assistant_service.py       108      8    93%   154-162, 176-177, 222, 224, 226
+app/services/llm_providers.py                71      9    87%   31, 42-45, 85, 129, 141, 144
+app/services/llm_safety.py                   29      0   100%
+-----------------------------------------------------------------------
+TOTAL                                      2191    296    86%

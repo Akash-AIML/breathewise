@@ -5,6 +5,7 @@ from typing import Dict, List, Optional, Tuple
 from app.adapters.cpcb import CPCBAdapter
 from app.adapters.openaq import OpenAQAdapter
 from app.adapters.openmeteo import OpenMeteoAdapter
+from app.core.cache import enforce_limit, prune_expired
 from app.core.config import settings
 from app.core.geo import haversine_distance_km
 from app.schemas.observation import (
@@ -164,6 +165,8 @@ class AirQualityService:
                 # Return a copy: callers must not be able to mutate shared cache
                 # state, and staleness must be re-evaluated on every hit.
                 return self.check_stale_status(entry.observation.model_copy(deep=True))
+            # Delete expired entries instead of leaving them to accumulate.
+            self._cache.pop(cache_key, None)
 
         observation: Optional[NormalizedObservation] = None
 
@@ -200,6 +203,8 @@ class AirQualityService:
             # Store an immutable-to-callers copy in cache
             expires_at = datetime.now(timezone.utc) + timedelta(seconds=settings.CACHE_TTL_SECONDS)
             self._cache[cache_key] = CacheEntry(observation.model_copy(deep=True), expires_at)
+            prune_expired(self._cache, lambda entry: entry.expires_at)
+            enforce_limit(self._cache, settings.CACHE_MAX_ENTRIES)
             return observation
 
         # Honest unavailable state: return None

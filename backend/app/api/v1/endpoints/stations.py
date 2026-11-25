@@ -2,6 +2,7 @@ from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query, status
 
+from app.core.config import settings
 from app.schemas.api import StationsResponse
 from app.schemas.observation import StationMetadata
 from app.services.air_quality_service import INDIAN_CITIES_REGISTRY, AirQualityService
@@ -26,6 +27,9 @@ async def list_or_search_stations(
     max_distance_km: float = Query(
         50.0, ge=1.0, le=500.0, description="Radius in km for nearby stations"
     ),
+    limit: int = Query(
+        100, ge=1, le=settings.API_MAX_PAGE_SIZE, description="Maximum stations returned"
+    ),
 ) -> StationsResponse:
     """
     Discovers real CPCB monitoring stations from live provider data.
@@ -42,10 +46,11 @@ async def list_or_search_stations(
     else:
         stations, source = await air_quality_service.search_stations_live()
 
+    page = stations[:limit]
     return StationsResponse(
         success=True,
-        count=len(stations),
-        data=stations,
+        count=len(page),
+        data=page,
         message=f"Station metadata source: {source}",
     )
 
