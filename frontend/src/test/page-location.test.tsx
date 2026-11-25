@@ -38,7 +38,12 @@ describe("HomePage location handling", () => {
       ).toBeInTheDocument();
     });
     expect(screen.queryByText(/Nearest Station/i)).not.toBeInTheDocument();
-    expect(screen.getByText(/My Exact Location/i)).toBeInTheDocument();
+    expect(screen.getByText(/My Exact Location near Delhi/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/Using exact device coordinates \(28\.6289, 77\.2407\).*Nearest known location: Delhi/i)
+    ).toBeInTheDocument();
+    expect(screen.getByText(/Nearest known location: Delhi \(ITO\).*km away/i)).toBeInTheDocument();
+    expect(screen.getByText(/Coordinates: 28\.6289°N, 77\.2407°E/i)).toBeInTheDocument();
 
     await waitFor(() => {
       const calls = (global.fetch as ReturnType<typeof vi.fn>).mock.calls.map((call) => String(call[0]));

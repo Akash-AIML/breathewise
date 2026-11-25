@@ -6,7 +6,7 @@
 > [`docs/DEPLOYMENT_STATUS.md`](docs/DEPLOYMENT_STATUS.md).
 
 [![Backend Tests](https://img.shields.io/badge/Backend%20Tests-133%20passing-brightgreen)](backend/tests)
-[![Frontend Tests](https://img.shields.io/badge/Frontend%20Tests-47%20passing-brightgreen)](frontend/src/test)
+[![Frontend Tests](https://img.shields.io/badge/Frontend%20Tests-51%20passing-brightgreen)](frontend/src/test)
 [![Coverage](https://img.shields.io/badge/Coverage-85%25-yellow)](docs/artifacts/coverage-html/index.html)
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-blue)](frontend)
 [![axe](https://img.shields.io/badge/axe-0%20violations-brightgreen)](docs/artifacts/axe-results.json)
@@ -35,6 +35,7 @@ BreatheWise helps Indian families navigate urban air pollution through:
 
 - **Genuine real-time air quality measurements** — CPCB/data.gov.in, OpenAQ, Open-Meteo CAMS (cascading failover)
 - **Location-aware station selection** — 10+ verified Indian CPCB stations with Haversine distance calculation
+- **Exact coordinates plus a readable place label** — “Use My Location” shows the device coordinates and the nearest known city/popular station as a label only; queries still use the exact coordinates
 - **Personalized household recommendations** — deterministic policy engine tuned to your household's vulnerabilities
 - **Low-emission daily routines** — diurnal planning with temperature inversion and ozone dispersion modelling
 - **Indoor air quality guidance** — CADR calculator, filter maintenance, cooking smoke management
@@ -189,7 +190,7 @@ Test categories:
 ```bash
 cd frontend
 npm run type-check   # TypeScript strict mode
-npm run test:ci      # Vitest + React Testing Library + axe; 47 passed
+npm run test:ci      # Vitest + React Testing Library + axe; 51 passed
 npm run build        # Production build; First Load JS 240 kB
 ```
 

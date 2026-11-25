@@ -38,6 +38,7 @@ import {
   searchLocations,
   GeocodedLocation,
 } from "@/lib/api";
+import { formatCoordinates, nearestNamedLocation } from "@/lib/geo";
 import { NormalizedObservation } from "@/types/observation";
 import { HouseholdProfile, PersonalizedPlan } from "@/types/recommendations";
 
@@ -96,6 +97,7 @@ export default function HomePage() {
   const [isPlanLoading, setIsPlanLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [geoStatus, setGeoStatus] = useState<string | null>(null);
+  const [locationLabel, setLocationLabel] = useState<string | null>(null);
   const [locationQuery, setLocationQuery] = useState("");
   const [locationResults, setLocationResults] = useState<GeocodedLocation[]>([]);
   const [isSearchingLocation, setIsSearchingLocation] = useState(false);
@@ -212,15 +214,26 @@ export default function HomePage() {
       (pos) => {
         const userLat = pos.coords.latitude;
         const userLon = pos.coords.longitude;
-        // Use the exact device coordinates. Snapping to a hardcoded station
-        // silently substituted another city's air quality for the user's own.
-        setGeoStatus(`Using exact device coordinates (${userLat.toFixed(4)}, ${userLon.toFixed(4)}).`);
+        // The nearest named place is a label only. The exact device coordinates
+        // remain the coordinates sent to every downstream feature.
+        const nearest = nearestNamedLocation(userLat, userLon, POPULAR_CITIES);
+        const nearbyText = nearest
+          ? ` Nearest known location: ${nearest.point.city} (${nearest.distanceKm.toFixed(1)} km away).`
+          : " No listed popular location is nearby; using exact coordinates only.";
+        setGeoStatus(
+          `Using exact device coordinates (${userLat.toFixed(4)}, ${userLon.toFixed(4)}).${nearbyText}`
+        );
+        setLocationLabel(
+          nearest
+            ? `Nearest known location: ${nearest.point.name} (${nearest.distanceKm.toFixed(1)} km away)`
+            : "No listed popular location nearby"
+        );
         setLocationResults([]);
         setSelectedStation({
-          name: "My Exact Location",
+          name: nearest ? `My Exact Location near ${nearest.point.city}` : "My Exact Location",
           station_id: "device_location",
-          city: "Device coordinates",
-          state: "",
+          city: nearest?.point.city ?? "Device coordinates",
+          state: nearest?.point.state ?? "",
           lat: userLat,
           lon: userLon,
         });
@@ -266,6 +279,7 @@ export default function HomePage() {
       lon: place.longitude,
     });
     setGeoStatus(`Using exact coordinates for ${place.name} (${place.latitude.toFixed(4)}, ${place.longitude.toFixed(4)}).`);
+    setLocationLabel(`${place.name}${region ? `, ${region}` : ""}`);
     setLocationResults([]);
   };
 
@@ -392,7 +406,10 @@ export default function HomePage() {
               return (
                 <button
                   key={stn.station_id}
-                  onClick={() => setSelectedStation(stn)}
+                  onClick={() => {
+                    setLocationLabel(null);
+                    setSelectedStation(stn);
+                  }}
                   className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-all ${
                     isSelected
                       ? "bg-white text-emerald-950 shadow-md font-bold"
@@ -459,7 +476,8 @@ export default function HomePage() {
                 Active Station: {selectedStation.name}
               </h2>
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                Coordinates: {selectedStation.lat.toFixed(4)}°N, {selectedStation.lon.toFixed(4)}°E • City: {selectedStation.city}, {selectedStation.state}
+                Coordinates: {formatCoordinates(selectedStation.lat, selectedStation.lon)} •{" "}
+                {locationLabel ?? `City: ${selectedStation.city}${selectedStation.state ? `, ${selectedStation.state}` : ""}`}
               </p>
             </div>
 
@@ -610,8 +628,11 @@ export default function HomePage() {
                         {observation.station.state}
                       </p>
                       <p className="text-[11px] text-slate-500">
-                        Station coordinates: {observation.station.latitude.toFixed(4)}°N,{" "}
-                        {observation.station.longitude.toFixed(4)}°E
+                        Station coordinates:{" "}
+                        {formatCoordinates(
+                          observation.station.latitude,
+                          observation.station.longitude
+                        )}
                       </p>
                     </div>
 
