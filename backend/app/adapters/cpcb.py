@@ -92,6 +92,7 @@ class CPCBAdapter(AirQualityAdapter):
         self._cache: Dict[str, Tuple[datetime, Any]] = {}
         self._last_valid: Dict[str, Tuple[datetime, List[CPCBStationObservation]]] = {}
         self._locks: Dict[str, asyncio.Lock] = {}
+        self._circuit_open_until: Optional[datetime] = None
         if not self.configured:
             if settings.ENVIRONMENT.lower() == "production":
                 raise CPCBConfigurationError(
@@ -276,32 +277,64 @@ class CPCBAdapter(AirQualityAdapter):
             return None
         return self._as_stale(observations, "Refresh failed; showing the last valid observation.")
 
+    def _circuit_is_open(self) -> bool:
+        if self._circuit_open_until is None:
+            return False
+        if datetime.now(timezone.utc) < self._circuit_open_until:
+            return True
+        self._circuit_open_until = None
+        return False
+
+    def _trip_circuit(self) -> None:
+        if self._circuit_open_until is not None:
+            return
+        self._circuit_open_until = datetime.now(timezone.utc) + timedelta(
+            seconds=settings.CPCB_CIRCUIT_BREAKER_SECONDS
+        )
+        logger.warning(
+            "CPCBAdapter skipping provider for %.1fs after an upstream failure.",
+            settings.CPCB_CIRCUIT_BREAKER_SECONDS,
+        )
+
+    def _unavailable_or_stale(self, key: str, reason: str) -> Any:
+        previous = self._previous_valid(key)
+        if previous is not None:
+            logger.warning("CPCBAdapter using stale cache for %s: %s", key, reason)
+            return previous
+        raise CPCBTemporaryError(reason)
+
     async def _load_with_fallback(self, key: str, loader) -> Any:
-        """Cache + coalesce requests, preserving the last valid data on failure."""
+        """Cache + coalesce requests, preserving the last valid data on failure.
+
+        A wall-clock budget bounds retries × pagination so a provider outage can
+        never hold up the user-facing request or block downstream providers.
+        """
         cached = self._cached(key)
         if cached is not None:
             return cached
+        if self._circuit_is_open():
+            return self._unavailable_or_stale(key, "CPCB provider is temporarily unavailable.")
         async with self._lock_for(key):
             cached = self._cached(key)
             if cached is not None:
                 return cached
+            if self._circuit_is_open():
+                return self._unavailable_or_stale(key, "CPCB provider is temporarily unavailable.")
             try:
-                value = await loader()
-            except CPCBProviderError as exc:
-                previous = self._previous_valid(key)
-                if previous is not None:
-                    logger.warning(
-                        "CPCBAdapter refresh failed for %s; using stale cache: %s",
-                        key,
-                        redact_secrets(exc),
-                    )
-                    return previous
-                raise
+                async with asyncio.timeout(settings.CPCB_REQUEST_BUDGET_SECONDS):
+                    value = await loader()
+            except (TimeoutError, CPCBProviderError) as exc:
+                self._trip_circuit()
+                reason = (
+                    "CPCB provider exceeded the request time budget."
+                    if isinstance(exc, TimeoutError)
+                    else redact_secrets(exc)
+                )
+                return self._unavailable_or_stale(key, reason)
+            self._circuit_open_until = None
             if not value:
                 previous = self._previous_valid(key)
-                if previous is not None:
-                    return previous
-                return value
+                return previous if previous is not None else value
             self._store(key, value)
             return value
 

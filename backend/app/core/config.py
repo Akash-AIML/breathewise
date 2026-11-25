@@ -46,6 +46,12 @@ class Settings(BaseSettings):
     CPCB_BACKOFF_BASE_SECONDS: float = 0.5
     CPCB_CONNECT_TIMEOUT_SECONDS: float = 5.0
     CPCB_READ_TIMEOUT_SECONDS: float = 20.0
+    # Wall-clock ceiling for a single CPCB lookup inside a user request. Without
+    # this, retries × pages can exceed a proxy timeout and prevent failover.
+    CPCB_REQUEST_BUDGET_SECONDS: float = 3.0
+    # After a failed CPCB lookup, skip the provider briefly so follow-up tabs
+    # and requests do not each repeat a long, doomed retry chain.
+    CPCB_CIRCUIT_BREAKER_SECONDS: float = 60.0
     CPCB_CACHE_TTL_SECONDS: int = 300
     CPCB_LAST_VALID_MAX_HOURS: int = 24
     CPCB_FRESH_HOURS: int = 2

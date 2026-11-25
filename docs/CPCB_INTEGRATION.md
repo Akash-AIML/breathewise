@@ -45,6 +45,8 @@ Relevant settings:
 | `CPCB_BACKOFF_BASE_SECONDS` | 0.5 | Exponential backoff base |
 | `CPCB_CONNECT_TIMEOUT_SECONDS` | 5.0 | Explicit connect timeout |
 | `CPCB_READ_TIMEOUT_SECONDS` | 20.0 | Explicit read timeout |
+| `CPCB_REQUEST_BUDGET_SECONDS` | 3.0 | Wall-clock ceiling for one CPCB lookup inside a user request |
+| `CPCB_CIRCUIT_BREAKER_SECONDS` | 60.0 | Provider skip window after a failed lookup |
 | `CPCB_CACHE_TTL_SECONDS` | 300 | Short-TTL provider cache |
 | `CPCB_LAST_VALID_MAX_HOURS` | 24 | Bound on stale fallback reuse |
 | `CPCB_FRESH_HOURS` | 2 | Fresh threshold (application display rule) |
@@ -52,6 +54,29 @@ Relevant settings:
 | `CPCB_AVERAGING_PERIOD_VERIFIED` | `false` | Gates official AQI calculation |
 
 Missing key behaviour: production startup of the adapter raises `CPCBConfigurationError`; development logs a warning and disables only the CPCB provider. Other providers continue to work.
+
+### Latency guard (request budget + circuit breaker)
+
+Retries are bounded per page, but a page budget of 3 attempts × 20 s multiplied by up to 10
+pages still allowed a single `GET /api/v1/air-quality` to take ~66 s when data.gov.in was
+unreachable. The Next.js dev proxy timed out at 30 s and the browser received HTTP 500 before
+Open-Meteo fallback could run. `CPCB_REQUEST_BUDGET_SECONDS` now caps the whole CPCB lookup with
+`asyncio.timeout`; on timeout or provider failure the adapter preserves the last valid data as
+stale and opens a short circuit (`CPCB_CIRCUIT_BREAKER_SECONDS`) so subsequent requests skip the
+provider and fail over immediately.
+
+Measured locally after the fix, from the browser origin through the Next.js proxy:
+
+| Request | Status | Wall time |
+|---|---|---|
+| Fresh exact coordinates `28.6322, 77.2422` (first lookup after restart) | 200 | 4.82 s |
+| Fresh exact coordinates `19.0771, 72.8776` (circuit open) | 200 | 1.87 s |
+| `POST /api/v1/recommendations/plan` at `19.0771, 72.8776` | 200 | 4.90 s |
+
+The browser check clicked **Use My Location** with geolocation overridden to
+`28.6322, 77.2422`; the status line showed the exact coordinates and the station grid showed
+`High-Res Observation Grid (28.6322°N, 77.2422°E)` with distance 0.0 km. Provider was
+Open-Meteo CAMS because CPCB was unreachable; no live CPCB data was observed.
 
 ## Observed source structure
 

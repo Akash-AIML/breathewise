@@ -5,7 +5,7 @@
 > Public repository: https://github.com/Akash-AIML/breathewise — **not deployed**; see
 > [`docs/DEPLOYMENT_STATUS.md`](docs/DEPLOYMENT_STATUS.md).
 
-[![Backend Tests](https://img.shields.io/badge/Backend%20Tests-130%20passing-brightgreen)](backend/tests)
+[![Backend Tests](https://img.shields.io/badge/Backend%20Tests-133%20passing-brightgreen)](backend/tests)
 [![Frontend Tests](https://img.shields.io/badge/Frontend%20Tests-47%20passing-brightgreen)](frontend/src/test)
 [![Coverage](https://img.shields.io/badge/Coverage-85%25-yellow)](docs/artifacts/coverage-html/index.html)
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-blue)](frontend)
@@ -174,7 +174,7 @@ The complete list of CPCB pagination, timeout, freshness and cache settings is i
 ```bash
 cd backend
 source .venv/bin/activate
-pytest tests/ -q     # 130 passed, 2 live tests skipped by default
+pytest tests/ -q     # 133 passed, 2 live tests skipped by default
 RUN_LIVE_TESTS=1 pytest tests/integration -q -m live   # opt-in; requires network + keys
 coverage run -m pytest tests/ -q && coverage report --include='app/*'  # app code: 85%
 ```
@@ -251,7 +251,7 @@ Key endpoints:
 
 ## Known Limitations
 
-1. **CPCB provider reachability** — live data.gov.in probes from the development machine timed out or returned 502. Real requests succeed only when the provider is reachable; the app then falls back to OpenAQ → Open-Meteo.
+1. **CPCB provider reachability** — live data.gov.in probes from the development machine timed out or returned 502. A per-request budget and circuit breaker limit the stall to ~3 s before the app falls back to OpenAQ → Open-Meteo. See [`docs/CPCB_INTEGRATION.md`](docs/CPCB_INTEGRATION.md).
 2. **CPCB AQI** — the dataset's averaging period is not verified here, so CPCB-backed responses show pollutant concentrations with AQI unavailable instead of inventing an official index.
 3. **Filter verification** — Chennai/Tamil Nadu filters are probed at runtime and documented as verified only after a successful response.
 4. **Open-Meteo CAMS Grid Resolution** — CAMS provides ~11km grid estimates, not point-source station readings. It is clearly labelled as a tertiary fallback.

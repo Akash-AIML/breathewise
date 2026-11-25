@@ -455,3 +455,63 @@ def _async_return(value):
         return value
 
     return fake
+
+
+@pytest.mark.asyncio
+async def test_request_budget_caps_slow_provider(monkeypatch):
+    """A hanging provider must not hold up the user request or downstream providers."""
+    monkeypatch.setattr(settings, "CPCB_REQUEST_BUDGET_SECONDS", 0.05)
+    monkeypatch.setattr(settings, "CPCB_MAX_RETRIES", 5)
+
+    async def handler(request):
+        await asyncio.sleep(1.0)
+        return httpx.Response(200, json={"total": 1, "records": [make_record()]})
+
+    adapter = adapter_with_mock(handler)
+    loop = asyncio.get_running_loop()
+    started = loop.time()
+    with pytest.raises(CPCBTemporaryError):
+        await adapter.get_station_observations()
+    assert loop.time() - started < 0.5
+
+
+@pytest.mark.asyncio
+async def test_circuit_breaker_skips_provider_after_failure(monkeypatch):
+    monkeypatch.setattr(settings, "CPCB_REQUEST_BUDGET_SECONDS", 0.05)
+    monkeypatch.setattr(settings, "CPCB_CIRCUIT_BREAKER_SECONDS", 30)
+    calls = 0
+
+    async def handler(request):
+        nonlocal calls
+        calls += 1
+        await asyncio.sleep(1.0)
+        return httpx.Response(200, json={"total": 1, "records": [make_record()]})
+
+    adapter = adapter_with_mock(handler)
+    with pytest.raises(CPCBTemporaryError):
+        await adapter.get_station_observations()
+    with pytest.raises(CPCBTemporaryError):
+        await adapter.get_station_observations()
+    assert calls == 1
+
+
+@pytest.mark.asyncio
+async def test_budget_timeout_preserves_last_valid_observation(monkeypatch):
+    monkeypatch.setattr(settings, "CPCB_CIRCUIT_BREAKER_SECONDS", 0)
+    monkeypatch.setattr(settings, "CPCB_CACHE_TTL_SECONDS", 0)
+    state = {"slow": False}
+
+    async def handler(request):
+        if state["slow"]:
+            await asyncio.sleep(1.0)
+        return httpx.Response(200, json={"total": 1, "records": [make_record()]})
+
+    adapter = adapter_with_mock(handler)
+    first = await adapter.fetch_by_coordinates(12.98, 80.21)
+    assert first is not None
+
+    state["slow"] = True
+    monkeypatch.setattr(settings, "CPCB_REQUEST_BUDGET_SECONDS", 0.05)
+    second = await adapter.fetch_by_coordinates(12.98, 80.21)
+    assert second is not None
+    assert "Refresh failed" in (second.notes or "")
