@@ -5,9 +5,9 @@
 > Public repository: https://github.com/Akash-AIML/breathewise — **not deployed**; see
 > [`docs/DEPLOYMENT_STATUS.md`](docs/DEPLOYMENT_STATUS.md).
 
-[![Backend Tests](https://img.shields.io/badge/Backend%20Tests-136%20passing-brightgreen)](backend/tests)
+[![Backend Tests](https://img.shields.io/badge/Backend%20Tests-143%20passing-brightgreen)](backend/tests)
 [![Frontend Tests](https://img.shields.io/badge/Frontend%20Tests-54%20passing-brightgreen)](frontend/src/test)
-[![Coverage](https://img.shields.io/badge/Coverage-85%25-yellow)](docs/artifacts/coverage-html/index.html)
+[![Coverage](https://img.shields.io/badge/Coverage-86%25-yellow)](docs/artifacts/coverage-html/index.html)
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-blue)](frontend)
 [![axe](https://img.shields.io/badge/axe-0%20violations-brightgreen)](docs/artifacts/axe-results.json)
 
@@ -40,7 +40,7 @@ BreatheWise helps Indian families navigate urban air pollution through:
 - **Low-emission daily routines** — diurnal planning with temperature inversion and ozone dispersion modelling
 - **Indoor air quality guidance** — CADR calculator, filter maintenance, cooking smoke management
 - **Sustainable alternatives** — documented Indian ARAI/CEA emission factors
-- **Explainable AI recommendations** — Groq/Gemini LLM explains pre-approved deterministic outputs only
+- **Explainable AI recommendations** — free-tier Gemini model chain explains pre-approved deterministic outputs only, with automatic failover and a deterministic fallback when every model is unavailable
 - **Transparent impact assessments** — provider provenance, measurement timestamps, data freshness clearly displayed
 
 > **Fabrication policy:** BreatheWise never generates synthetic AQI values. If all providers fail, it shows an honest unavailable state.
@@ -155,6 +155,9 @@ Copy `.env.example` to `.env` in the project root (or `backend/`):
 | `OPENAQ_API_KEY` | No | OpenAQ v3 API key (register at https://explore.openaq.org) |
 | `GROQ_API_KEY` | No | Groq LLM API key (https://console.groq.com) |
 | `GEMINI_API_KEY` | No | Google Gemini API key (https://ai.google.dev) |
+| `GEMINI_MODELS` | No | Ordered free-tier model failover chain (default: Gemini 3.1 Flash Lite → Gemini 3.5 Flash Lite → Gemma 4 31B → Gemma 4 26B) |
+| `LLM_REQUEST_BUDGET_SECONDS` | No | Wall-clock ceiling for the whole chain (default: 20s) |
+| `GEMINI_MODEL_TIMEOUT_SECONDS` / `GEMMA_MODEL_TIMEOUT_SECONDS` | No | Per-model read timeouts (default: 7s / 12s) |
 | `CORS_ORIGINS` | Yes (prod) | JSON array of allowed frontend origins |
 | `ENVIRONMENT` | No | `development` or `production` |
 | `CACHE_TTL_SECONDS` | No | Observation cache TTL (default: 900s) |
@@ -175,9 +178,9 @@ The complete list of CPCB pagination, timeout, freshness and cache settings is i
 ```bash
 cd backend
 source .venv/bin/activate
-pytest tests/ -q     # 136 passed, 2 live tests skipped by default
+pytest tests/ -q     # 143 passed, 2 live tests skipped by default
 RUN_LIVE_TESTS=1 pytest tests/integration -q -m live   # opt-in; requires network + keys
-coverage run -m pytest tests/ -q && coverage report --include='app/*'  # app code: 85%
+coverage run -m pytest tests/ -q && coverage report --include='app/*'  # app code: 86%
 ```
 
 Test categories:

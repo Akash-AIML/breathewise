@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 import re
@@ -17,6 +18,11 @@ from app.schemas.profile import HouseholdProfile
 from app.schemas.recommendation import EnvironmentalAssessment, PersonalizedPlan
 
 logger = logging.getLogger(__name__)
+
+
+class _LLMPermanentError(Exception):
+    """Invalid credentials: retrying other models with the same key cannot help."""
+
 
 # Patterns indicating potential adversarial prompt injection or role hijacking.
 # Matching happens on a heavily normalized string, not the raw user input.
@@ -102,6 +108,12 @@ class LLMAssistantService:
         self.groq_api_key = settings.GROQ_API_KEY
         self.gemini_api_key = settings.GEMINI_API_KEY
 
+    @staticmethod
+    def _gemini_model_chain() -> list[str]:
+        models = [name.strip() for name in settings.GEMINI_MODELS.split(",") if name.strip()]
+        # De-duplicate while preserving the configured priority order.
+        return list(dict.fromkeys(models))
+
     def screen_for_prompt_injection(self, user_query: str) -> bool:
         """
         Returns True if the query contains suspicious adversarial injection patterns.
@@ -182,7 +194,10 @@ class LLMAssistantService:
             "1. You may NEVER fabricate or change the AQI value.\n"
             "2. You may NEVER invent medical cures or unsupported risk statistics.\n"
             "3. You may NEVER override data quality status or recommend outdoor exercise during severe air.\n"
-            "4. Output MUST be a valid JSON object matching the requested schema.\n\n"
+            "4. Output MUST be a valid JSON object with exactly these fields: "
+            '{"answer": "...", "scientific_rationale": "...", "approved_actions": ["..."]}. '
+            "Do not add other keys. approved_actions must copy strings verbatim "
+            "from the APPROVED RECOMMENDATIONS below.\n\n"
             f"VALIDATED TELEMETRY:\n"
             f"- Station: {obs.station.station_name} ({obs.station.city})\n"
             f"- CPCB AQI: {obs.calculated_aqi} ({self._label(obs.aqi_category)})\n"
@@ -202,16 +217,44 @@ class LLMAssistantService:
 
         approved_actions = self._approved_actions(plan)
         try:
-            if self.groq_api_key:
-                return await self._call_groq(
-                    query, system_prompt, obs, assessment, approved_actions
-                )
-            elif self.gemini_api_key:
-                return await self._call_gemini(
-                    query, system_prompt, obs, assessment, approved_actions
-                )
-        except Exception as e:
-            logger.warning("External LLM API call failed: %s; invoking fallback.", str(e))
+            async with asyncio.timeout(settings.LLM_REQUEST_BUDGET_SECONDS):
+                if self.gemini_api_key:
+                    for model in self._gemini_model_chain():
+                        try:
+                            result = await self._call_gemini(
+                                query, system_prompt, obs, assessment, approved_actions, model
+                            )
+                        except _LLMPermanentError:
+                            logger.warning("Gemini key rejected; stopping model failover chain.")
+                            break
+                        except Exception as exc:
+                            # Log the exception type only: credentials are never included
+                            # in upstream URLs or payloads, and must never reach logs.
+                            logger.warning(
+                                "Gemini model %s failed (%s); trying next model.",
+                                model,
+                                type(exc).__name__,
+                            )
+                            continue
+                        if result is not None:
+                            logger.info("LLM explanation generated with %s.", model)
+                            return result
+                        logger.warning(
+                            "Gemini model %s returned unusable output; trying next model.", model
+                        )
+
+                # Groq remains an optional last resort, after the configured free-tier chain.
+                if self.groq_api_key:
+                    return await self._call_groq(
+                        query, system_prompt, obs, assessment, approved_actions
+                    )
+        except TimeoutError:
+            logger.warning("LLM chain exceeded its time budget; invoking deterministic fallback.")
+            return None
+        except Exception as exc:
+            logger.warning(
+                "External LLM API call failed (%s); invoking fallback.", type(exc).__name__
+            )
             return None
 
         return None
@@ -297,6 +340,27 @@ class LLMAssistantService:
             llm_grounded=True,
         )
 
+    @staticmethod
+    def _parse_json_object(text: str) -> Optional[dict]:
+        """Parse a JSON object from a model reply, tolerating code fences/prose."""
+        if not isinstance(text, str) or not text.strip():
+            return None
+        cleaned = text.strip()
+        cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned)
+        cleaned = re.sub(r"\s*```$", "", cleaned)
+        parsed: object = None
+        try:
+            parsed = json.loads(cleaned)
+        except (ValueError, TypeError):
+            start, end = cleaned.find("{"), cleaned.rfind("}")
+            if start == -1 or end <= start:
+                return None
+            try:
+                parsed = json.loads(cleaned[start : end + 1])
+            except (ValueError, TypeError):
+                return None
+        return parsed if isinstance(parsed, dict) else None
+
     async def _call_groq(
         self,
         query: str,
@@ -329,7 +393,9 @@ class LLMAssistantService:
 
             data = resp.json()
             content = data["choices"][0]["message"]["content"]
-            parsed = json.loads(content)
+            parsed = self._parse_json_object(content)
+            if parsed is None:
+                return None
             return self._build_grounded_explanation(parsed, obs, assessment, approved_actions)
 
     async def _call_gemini(
@@ -339,24 +405,60 @@ class LLMAssistantService:
         obs: NormalizedObservation,
         assessment: EnvironmentalAssessment,
         approved_actions: list[str],
+        model: str,
     ) -> Optional[ExplanationResponse]:
-        url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"
+        """One model in the configured free-tier chain. Never logs the API key."""
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
         headers = {"x-goog-api-key": self.gemini_api_key, "Content-Type": "application/json"}
+        # Gemma 4 models emit a long `thought` part before the JSON answer, so
+        # they need a larger output budget and a longer read timeout.
+        is_gemma = model.startswith("gemma-")
         payload = {
             "systemInstruction": {"parts": [{"text": system_prompt}]},
             "contents": [{"role": "user", "parts": [{"text": query}]}],
-            "generationConfig": {"response_mime_type": "application/json"},
+            "generationConfig": {
+                "responseMimeType": "application/json",
+                "maxOutputTokens": 2048 if is_gemma else 800,
+            },
         }
+        timeout = (
+            settings.GEMMA_MODEL_TIMEOUT_SECONDS
+            if is_gemma
+            else settings.GEMINI_MODEL_TIMEOUT_SECONDS
+        )
 
-        async with httpx.AsyncClient(timeout=8.0) as client:
+        async with httpx.AsyncClient(timeout=timeout) as client:
             resp = await client.post(url, headers=headers, json=payload)
             if resp.status_code != 200:
-                logger.warning("Gemini API returned HTTP %s", resp.status_code)
+                body = resp.text.lower() if hasattr(resp, "text") else ""
+                if resp.status_code in (401, 403) or (
+                    resp.status_code == 400 and "api key" in body
+                ):
+                    raise _LLMPermanentError("Gemini key rejected")
+                logger.warning(
+                    "Gemini model %s returned HTTP %s; trying next model.", model, resp.status_code
+                )
                 return None
 
             data = resp.json()
-            content = data["candidates"][0]["content"]["parts"][0]["text"]
-            parsed = json.loads(content)
+            candidates = data.get("candidates") or []
+            if not candidates:
+                return None
+            parts = (candidates[0].get("content") or {}).get("parts") or []
+            # Thinking models (Gemma 4, Gemini 3) put reasoning in parts flagged
+            # `thought: true`. Only the final non-thought text part is an answer.
+            texts = [
+                part.get("text")
+                for part in parts
+                if isinstance(part, dict)
+                and not part.get("thought")
+                and isinstance(part.get("text"), str)
+            ]
+            if not texts:
+                return None
+            parsed = self._parse_json_object(texts[-1])
+            if parsed is None:
+                return None
             return self._build_grounded_explanation(parsed, obs, assessment, approved_actions)
 
     def _generate_deterministic_fallback(

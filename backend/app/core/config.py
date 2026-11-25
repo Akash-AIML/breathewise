@@ -27,6 +27,17 @@ class Settings(BaseSettings):
     GROQ_API_KEY: Optional[str] = None
     GEMINI_API_KEY: Optional[str] = None
 
+    # Free-tier Gemini model chain, tried in order. A rate-limited, unavailable,
+    # or malformed response on one model never blocks the next one.
+    GEMINI_MODELS: str = (
+        "gemini-3.1-flash-lite,gemini-3.5-flash-lite,gemma-4-31b-it,gemma-4-26b-a4b-it"
+    )
+    # Wall-clock ceiling for the whole LLM chain so a slow failover cannot
+    # exceed the frontend proxy timeout. Per-model timeouts are listed below.
+    LLM_REQUEST_BUDGET_SECONDS: float = 20.0
+    GEMINI_MODEL_TIMEOUT_SECONDS: float = 10.0
+    GEMMA_MODEL_TIMEOUT_SECONDS: float = 12.0
+
     # Service Configuration
     HTTP_TIMEOUT_SECONDS: float = 10.0
 
