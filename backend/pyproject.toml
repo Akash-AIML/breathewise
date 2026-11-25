@@ -16,6 +16,9 @@ pythonpath = ["."]
 testpaths = ["tests"]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
+markers = [
+    "live: integration tests that call real external providers (opt-in with RUN_LIVE_TESTS=1)",
+]
 
 [tool.ruff]
 line-length = 100

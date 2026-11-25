@@ -39,6 +39,23 @@ describe("HistoricalTrendChart Component", () => {
     expect(screen.getByText("160")).toBeInTheDocument();
   });
 
+  it("renders missing trend values as an em dash rather than zero", () => {
+    render(
+      <HistoricalTrendChart
+        data={[{ time: "2026-11-24T12:00:00Z", aqi: null, pm2_5: null, pm10: 42 }]}
+        stationName="Delhi (ITO)"
+        sourceLabel="openmeteo_cams"
+      />
+    );
+    fireEvent.click(screen.getByLabelText("Show accessible data table view"));
+    const row = screen.getByRole("table").querySelector("tbody tr") as HTMLTableRowElement;
+    expect(row).toBeTruthy();
+    expect(row.querySelectorAll("td")[1]).toHaveTextContent("—");
+    expect(row.querySelectorAll("td")[2]).toHaveTextContent("—");
+    expect(row.querySelectorAll("td")[3]).toHaveTextContent("42");
+    expect(screen.getByText(/openmeteo_cams/)).toBeInTheDocument();
+  });
+
   it("handles empty data gracefully", () => {
     render(<HistoricalTrendChart data={[]} stationName="Delhi (ITO)" />);
     expect(screen.getByText(/No historical hourly records/i)).toBeInTheDocument();

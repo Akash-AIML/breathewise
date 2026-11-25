@@ -19,6 +19,7 @@ export type AQICategory =
 export type DataQualityStatus =
   | "verified"
   | "estimated"
+  | "delayed"
   | "insufficient"
   | "stale"
   | "unavailable";
@@ -26,9 +27,12 @@ export type DataQualityStatus =
 export interface NormalizedPollutantReading {
   pollutant: PollutantType;
   value: number;
-  unit: string;
+  unit: string | null;
   sub_index?: number | null;
-  averaging_period_hours: number;
+  averaging_period_hours?: number | null;
+  min_value?: number | null;
+  max_value?: number | null;
+  source_pollutant_id?: string | null;
 }
 
 export interface HourlyTrendPoint {
@@ -52,6 +56,8 @@ export interface StationMetadata {
   longitude: number;
   distance_km?: number | null;
   elevation_m?: number | null;
+  provider?: string | null;
+  source_observation_time?: string | null;
 }
 
 export interface NormalizedObservation {
@@ -79,6 +85,7 @@ export interface StationsApiResponse {
   success: boolean;
   count: number;
   data: StationMetadata[];
+  message?: string | null;
 }
 
 export interface ComparisonDifferential {

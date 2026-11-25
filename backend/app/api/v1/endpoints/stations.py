@@ -15,6 +15,8 @@ async def list_or_search_stations(
     query: Optional[str] = Query(
         None, max_length=100, description="City, state or station search query"
     ),
+    city: Optional[str] = Query(None, max_length=100, description="Exact city filter"),
+    state: Optional[str] = Query(None, max_length=100, description="Exact state filter"),
     lat: Optional[float] = Query(
         None, ge=-90.0, le=90.0, description="Optional user latitude for proximity search"
     ),
@@ -26,24 +28,25 @@ async def list_or_search_stations(
     ),
 ) -> StationsResponse:
     """
-    Discovers air quality monitoring stations:
-    - If lat/lon provided: finds nearest stations within max_distance_km sorted by distance.
-    - If query provided: filters stations by name, city, or state.
-    - Otherwise returns the verified Indian station registry.
+    Discovers real CPCB monitoring stations from live provider data.
+    A labelled fallback registry is used only when CPCB has no usable stations.
     """
     if lat is not None and lon is not None:
-        nearby = air_quality_service.search_nearby_stations(
+        stations, source = await air_quality_service.search_nearby_stations_live(
             lat, lon, max_distance_km=max_distance_km
         )
-        stations = [s for s, _ in nearby]
-        return StationsResponse(success=True, count=len(stations), data=stations)
-
-    if query:
-        matches = air_quality_service.search_stations_by_query(query)
-        return StationsResponse(success=True, count=len(matches), data=matches)
+    elif query or city or state:
+        stations, source = await air_quality_service.search_stations_live(
+            query=query, city=city, state=state
+        )
+    else:
+        stations, source = await air_quality_service.search_stations_live()
 
     return StationsResponse(
-        success=True, count=len(INDIAN_CITIES_REGISTRY), data=INDIAN_CITIES_REGISTRY
+        success=True,
+        count=len(stations),
+        data=stations,
+        message=f"Station metadata source: {source}",
     )
 
 
@@ -52,7 +55,7 @@ async def get_station_by_id(station_id: str) -> StationMetadata:
     """Retrieves metadata for a specific station identifier."""
     for s in INDIAN_CITIES_REGISTRY:
         if s.station_id == station_id:
-            return s
+            return s.model_copy(update={"provider": "fallback_registry"})
 
     raise HTTPException(
         status_code=status.HTTP_404_NOT_FOUND,

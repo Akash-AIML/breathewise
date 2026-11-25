@@ -18,6 +18,7 @@ import {
   Leaf,
   Users,
   MessageCircle,
+  type LucideIcon,
 } from "lucide-react";
 import { AQIBadge } from "@/components/aqi/aqi-badge";
 import { Button } from "@/components/ui/button";
@@ -30,7 +31,13 @@ import { DailyPlanner } from "@/components/planner/daily-planner";
 import { IndoorAssistant } from "@/components/indoor/indoor-assistant";
 import { SustainableAlternativesView } from "@/components/sustainability/sustainable-alternatives";
 import { ChatAssistant } from "@/components/assistant/chat-assistant";
-import { fetchAirQuality, fetchPersonalizedPlan } from "@/lib/api";
+import {
+  fetchAirQuality,
+  fetchPersonalizedPlan,
+  fetchStations,
+  searchLocations,
+  GeocodedLocation,
+} from "@/lib/api";
 import { NormalizedObservation } from "@/types/observation";
 import { HouseholdProfile, PersonalizedPlan } from "@/types/recommendations";
 
@@ -45,6 +52,27 @@ const POPULAR_CITIES: (MapStation & { distance_km?: number })[] = [
   { name: "Ahmedabad (Maninagar)", station_id: "cpcb_ahmedabad_maninagar", city: "Ahmedabad", state: "Gujarat", lat: 22.9984, lon: 72.6033 },
   { name: "Pune (Shivajinagar)", station_id: "cpcb_pune_shivajinagar", city: "Pune", state: "Maharashtra", lat: 18.5314, lon: 73.8446 },
   { name: "Lucknow (Lalbagh)", station_id: "cpcb_lucknow_lalbagh", city: "Lucknow", state: "Uttar Pradesh", lat: 26.8467, lon: 80.9462 },
+];
+
+type TabId =
+  | "overview"
+  | "planner"
+  | "indoor"
+  | "sustainability"
+  | "trends"
+  | "comparison"
+  | "map"
+  | "assistant";
+
+const TABS: { id: TabId; label: string; icon: LucideIcon }[] = [
+  { id: "overview", label: "Live Dashboard", icon: Wind },
+  { id: "planner", label: "Daily Planner", icon: Calendar },
+  { id: "indoor", label: "Indoor Air Guide", icon: Home },
+  { id: "sustainability", label: "Sustainable Transit", icon: Leaf },
+  { id: "trends", label: "24-Hour Trends", icon: TrendingUp },
+  { id: "comparison", label: "Station Comparison", icon: GitCompare },
+  { id: "map", label: "Station Map", icon: MapPin },
+  { id: "assistant", label: "AI Assistant", icon: MessageCircle },
 ];
 
 export default function HomePage() {
@@ -68,9 +96,32 @@ export default function HomePage() {
   const [isPlanLoading, setIsPlanLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [geoStatus, setGeoStatus] = useState<string | null>(null);
+  const [locationQuery, setLocationQuery] = useState("");
+  const [locationResults, setLocationResults] = useState<GeocodedLocation[]>([]);
+  const [isSearchingLocation, setIsSearchingLocation] = useState(false);
+  const [liveStations, setLiveStations] = useState<MapStation[]>([]);
+  const [stationsSource, setStationsSource] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<
     "overview" | "trends" | "planner" | "indoor" | "sustainability" | "comparison" | "map" | "assistant"
   >("overview");
+
+  const handleTabKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>, index: number) => {
+    let nextIndex: number | null = null;
+    if (event.key === "ArrowRight" || event.key === "ArrowDown") {
+      nextIndex = (index + 1) % TABS.length;
+    } else if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
+      nextIndex = (index - 1 + TABS.length) % TABS.length;
+    } else if (event.key === "Home") {
+      nextIndex = 0;
+    } else if (event.key === "End") {
+      nextIndex = TABS.length - 1;
+    }
+    if (nextIndex === null) return;
+    event.preventDefault();
+    const nextId = TABS[nextIndex].id;
+    setActiveTab(nextId);
+    document.getElementById(`tab-${nextId}`)?.focus();
+  };
 
   const loadData = async (lat: number, lon: number, bypassCache = false) => {
     setIsLoading(true);
@@ -79,6 +130,11 @@ export default function HomePage() {
       const res = await fetchAirQuality(lat, lon, bypassCache);
       if (res.success && res.data) {
         setObservation(res.data);
+        setError(null);
+      } else if (res.success) {
+        // Honest empty state: the provider responded but has no usable data.
+        setObservation(null);
+        setError(null);
       } else {
         setError(res.message || "No data available for this location.");
         setObservation(null);
@@ -108,6 +164,43 @@ export default function HomePage() {
     loadPlan(selectedStation.lat, selectedStation.lon, profile);
   }, [selectedStation, profile]);
 
+  useEffect(() => {
+    let cancelled = false;
+    fetchStations()
+      .then((result) => {
+        if (cancelled) return;
+        const isLiveCpcb = result.message?.includes("CPCB/data.gov.in") ?? false;
+        setStationsSource(isLiveCpcb ? "CPCB/data.gov.in" : result.message ?? "source unavailable");
+        setLiveStations(
+          isLiveCpcb
+            ? result.data
+                .filter(
+                  (station) =>
+                    Number.isFinite(station.latitude) &&
+                    Number.isFinite(station.longitude)
+                )
+                .map((station) => ({
+                  name: station.station_name,
+                  station_id: station.station_id,
+                  city: station.city,
+                  state: station.state,
+                  lat: station.latitude,
+                  lon: station.longitude,
+                }))
+            : []
+        );
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setStationsSource("source unavailable");
+          setLiveStations([]);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const handleUseMyLocation = () => {
     if (!navigator.geolocation) {
       setGeoStatus("Geolocation is not supported by your browser.");
@@ -119,24 +212,61 @@ export default function HomePage() {
       (pos) => {
         const userLat = pos.coords.latitude;
         const userLon = pos.coords.longitude;
-        setGeoStatus(`Location found (${userLat.toFixed(2)}°N, ${userLon.toFixed(2)}°E)`);
-
-        const nearest = [...POPULAR_CITIES].sort((a, b) => {
-          const distA = Math.hypot(a.lat - userLat, a.lon - userLon);
-          const distB = Math.hypot(b.lat - userLat, b.lon - userLon);
-          return distA - distB;
-        })[0];
-
+        // Use the exact device coordinates. Snapping to a hardcoded station
+        // silently substituted another city's air quality for the user's own.
+        setGeoStatus(`Using exact device coordinates (${userLat.toFixed(4)}, ${userLon.toFixed(4)}).`);
+        setLocationResults([]);
         setSelectedStation({
-          ...nearest,
-          name: `Nearest Station (${nearest.city})`,
+          name: "My Exact Location",
+          station_id: "device_location",
+          city: "Device coordinates",
+          state: "",
+          lat: userLat,
+          lon: userLon,
         });
       },
-      (err) => {
-        setGeoStatus("Location access denied or timed out. You can manually choose any city below.");
+      () => {
+        setGeoStatus("Location access denied or timed out. Search for your city or choose a station below.");
       },
-      { timeout: 10000 }
+      { timeout: 10000, enableHighAccuracy: true }
     );
+  };
+
+  const handleLocationSearch = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (locationQuery.trim().length < 2) {
+      setGeoStatus("Enter at least two characters to search for a place.");
+      return;
+    }
+    setIsSearchingLocation(true);
+    try {
+      const results = await searchLocations(locationQuery);
+      setLocationResults(results);
+      setGeoStatus(
+        results.length === 0
+          ? `No place matched "${locationQuery}". Try a nearby city or use your device location.`
+          : `${results.length} exact coordinate match(es) found. Pick one below.`
+      );
+    } catch (err) {
+      setLocationResults([]);
+      setGeoStatus(err instanceof Error ? err.message : "Location search failed.");
+    } finally {
+      setIsSearchingLocation(false);
+    }
+  };
+
+  const selectGeocodedLocation = (place: GeocodedLocation) => {
+    const region = [place.admin1, place.country].filter(Boolean).join(", ");
+    setSelectedStation({
+      name: region ? `${place.name}, ${region}` : place.name,
+      station_id: `geocode_${place.id}`,
+      city: place.name,
+      state: place.admin1 ?? "",
+      lat: place.latitude,
+      lon: place.longitude,
+    });
+    setGeoStatus(`Using exact coordinates for ${place.name} (${place.latitude.toFixed(4)}, ${place.longitude.toFixed(4)}).`);
+    setLocationResults([]);
   };
 
   const getRelativeTime = (isoString?: string) => {
@@ -156,13 +286,13 @@ export default function HomePage() {
           <div className="max-w-2xl space-y-3">
             <div className="inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1 text-xs font-semibold tracking-wide text-emerald-200 backdrop-blur-xs">
               <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
-              100% Genuine Environmental Measurements • Zero Synthetic Generation
+              Source-Attributed Environmental Data • No Synthetic AQI Generation
             </div>
             <h1 className="text-3xl font-extrabold sm:text-4xl tracking-tight">
               BreatheWise — Evidence-Based Air Quality Assistant
             </h1>
             <p className="text-emerald-100 text-sm sm:text-base leading-relaxed">
-              Empowering Indian families with authentic CPCB air measurements, deterministic health precautions, and personalized low-emission routines.
+              Empowering Indian families with source-attributed CPCB/CAMS air data, deterministic health precautions, and personalized low-emission routines.
             </p>
           </div>
 
@@ -206,10 +336,54 @@ export default function HomePage() {
             </Button>
           </div>
 
+          <form onSubmit={handleLocationSearch} className="flex flex-wrap items-center gap-2">
+            <label htmlFor="location-search" className="text-xs font-semibold text-emerald-200">
+              Search any city or locality:
+            </label>
+            <input
+              id="location-search"
+              type="search"
+              value={locationQuery}
+              onChange={(event) => setLocationQuery(event.target.value)}
+              placeholder="e.g. Patna, Pune, Kochi"
+              className="min-w-0 flex-1 rounded-lg border border-emerald-700 bg-emerald-950/70 px-3 py-1.5 text-xs text-white placeholder-emerald-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300"
+            />
+            <Button
+              type="submit"
+              variant="outline"
+              size="sm"
+              disabled={isSearchingLocation}
+              className="bg-emerald-900/60 border-emerald-700 text-emerald-100 hover:bg-emerald-800 text-xs flex items-center gap-1.5"
+            >
+              <Search className="h-3.5 w-3.5" aria-hidden="true" />
+              {isSearchingLocation ? "Searching…" : "Find Exact Place"}
+            </Button>
+          </form>
+
           {geoStatus && (
             <p className="text-[11px] text-emerald-300 italic" role="status">
               {geoStatus}
             </p>
+          )}
+
+          {locationResults.length > 0 && (
+            <ul className="flex flex-wrap gap-2" aria-label="Exact location search results">
+              {locationResults.map((place) => (
+                <li key={place.id}>
+                  <button
+                    type="button"
+                    onClick={() => selectGeocodedLocation(place)}
+                    className="rounded-lg px-3 py-1.5 text-xs font-medium bg-emerald-800/80 text-emerald-100 hover:bg-emerald-700"
+                  >
+                    {place.name}
+                    {place.admin1 ? `, ${place.admin1}` : ""}
+                    <span className="ml-1 text-emerald-300">
+                      ({place.latitude.toFixed(3)}, {place.longitude.toFixed(3)})
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
           )}
 
           <div id="station-selector" className="flex flex-wrap gap-2" role="group" aria-label="Monitored Stations">
@@ -234,111 +408,50 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* Navigation Tabs for All 6 Modules */}
+      {/* Navigation Tabs for All Modules */}
       <div className="border-b border-slate-200 dark:border-slate-800">
-        <nav className="flex flex-wrap gap-x-6 gap-y-2 text-sm font-semibold" aria-label="Dashboard Views">
-          <button
-            onClick={() => setActiveTab("overview")}
-            className={`pb-3 border-b-2 flex items-center gap-2 transition-colors ${
-              activeTab === "overview"
-                ? "border-emerald-600 text-emerald-800 dark:border-emerald-400 dark:text-emerald-300"
-                : "border-transparent text-slate-500 hover:text-slate-800 dark:text-slate-400"
-            }`}
-          >
-            <Wind className="h-4 w-4" aria-hidden="true" />
-            Live Dashboard
-          </button>
-
-          <button
-            onClick={() => setActiveTab("planner")}
-            className={`pb-3 border-b-2 flex items-center gap-2 transition-colors ${
-              activeTab === "planner"
-                ? "border-emerald-600 text-emerald-800 dark:border-emerald-400 dark:text-emerald-300"
-                : "border-transparent text-slate-500 hover:text-slate-800 dark:text-slate-400"
-            }`}
-          >
-            <Calendar className="h-4 w-4" aria-hidden="true" />
-            Daily Planner
-          </button>
-
-          <button
-            onClick={() => setActiveTab("indoor")}
-            className={`pb-3 border-b-2 flex items-center gap-2 transition-colors ${
-              activeTab === "indoor"
-                ? "border-emerald-600 text-emerald-800 dark:border-emerald-400 dark:text-emerald-300"
-                : "border-transparent text-slate-500 hover:text-slate-800 dark:text-slate-400"
-            }`}
-          >
-            <Home className="h-4 w-4" aria-hidden="true" />
-            Indoor Air Guide
-          </button>
-
-          <button
-            onClick={() => setActiveTab("sustainability")}
-            className={`pb-3 border-b-2 flex items-center gap-2 transition-colors ${
-              activeTab === "sustainability"
-                ? "border-emerald-600 text-emerald-800 dark:border-emerald-400 dark:text-emerald-300"
-                : "border-transparent text-slate-500 hover:text-slate-800 dark:text-slate-400"
-            }`}
-          >
-            <Leaf className="h-4 w-4" aria-hidden="true" />
-            Sustainable Transit
-          </button>
-
-          <button
-            onClick={() => setActiveTab("trends")}
-            className={`pb-3 border-b-2 flex items-center gap-2 transition-colors ${
-              activeTab === "trends"
-                ? "border-emerald-600 text-emerald-800 dark:border-emerald-400 dark:text-emerald-300"
-                : "border-transparent text-slate-500 hover:text-slate-800 dark:text-slate-400"
-            }`}
-          >
-            <TrendingUp className="h-4 w-4" aria-hidden="true" />
-            24-Hour Trends
-          </button>
-
-          <button
-            onClick={() => setActiveTab("comparison")}
-            className={`pb-3 border-b-2 flex items-center gap-2 transition-colors ${
-              activeTab === "comparison"
-                ? "border-emerald-600 text-emerald-800 dark:border-emerald-400 dark:text-emerald-300"
-                : "border-transparent text-slate-500 hover:text-slate-800 dark:text-slate-400"
-            }`}
-          >
-            <GitCompare className="h-4 w-4" aria-hidden="true" />
-            Station Comparison
-          </button>
-
-          <button
-            onClick={() => setActiveTab("map")}
-            className={`pb-3 border-b-2 flex items-center gap-2 transition-colors ${
-              activeTab === "map"
-                ? "border-emerald-600 text-emerald-800 dark:border-emerald-400 dark:text-emerald-300"
-                : "border-transparent text-slate-500 hover:text-slate-800 dark:text-slate-400"
-            }`}
-          >
-            <MapPin className="h-4 w-4" aria-hidden="true" />
-            Station Map
-          </button>
-
-          <button
-            onClick={() => setActiveTab("assistant")}
-            className={`pb-3 border-b-2 flex items-center gap-2 transition-colors ${
-              activeTab === "assistant"
-                ? "border-emerald-600 text-emerald-800 dark:border-emerald-400 dark:text-emerald-300"
-                : "border-transparent text-slate-500 hover:text-slate-800 dark:text-slate-400"
-            }`}
-            aria-current={activeTab === "assistant" ? "page" : undefined}
-          >
-            <MessageCircle className="h-4 w-4" aria-hidden="true" />
-            AI Assistant
-          </button>
-        </nav>
+        <div
+          role="tablist"
+          aria-label="Dashboard Views"
+          className="flex flex-wrap gap-x-6 gap-y-2 text-sm font-semibold"
+        >
+          {TABS.map((tab, index) => {
+            const Icon = tab.icon;
+            const isSelected = activeTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                id={`tab-${tab.id}`}
+                role="tab"
+                type="button"
+                aria-selected={isSelected}
+                aria-controls={`panel-${tab.id}`}
+                tabIndex={isSelected ? 0 : -1}
+                onClick={() => setActiveTab(tab.id)}
+                onKeyDown={(event) => handleTabKeyDown(event, index)}
+                className={`pb-3 border-b-2 flex items-center gap-2 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 ${
+                  isSelected
+                    ? "border-emerald-600 text-emerald-800 dark:border-emerald-400 dark:text-emerald-300"
+                    : "border-transparent text-slate-500 hover:text-slate-800 dark:text-slate-400"
+                }`}
+              >
+                <Icon className="h-4 w-4" aria-hidden="true" />
+                {tab.label}
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       {/* TAB 1: LIVE DASHBOARD OVERVIEW */}
       {activeTab === "overview" && (
-        <section aria-labelledby="live-aqi-heading" className="space-y-6">
+        <section
+          id="panel-overview"
+          role="tabpanel"
+          aria-labelledby="tab-overview"
+          tabIndex={0}
+          className="space-y-6 focus:outline-none"
+        >
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div>
               <h2 id="live-aqi-heading" className="text-xl font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
@@ -381,32 +494,79 @@ export default function HomePage() {
             <div className="rounded-xl border border-red-200 bg-red-50 p-6 text-red-900 dark:border-red-900 dark:bg-red-950/50 dark:text-red-200" role="alert">
               <div className="flex items-start gap-3">
                 <AlertTriangle className="h-5 w-5 text-red-600 shrink-0 mt-0.5" aria-hidden="true" />
-                <div>
+                <div className="flex-1">
                   <h3 className="text-sm font-bold">Observation Telemetry Unavailable</h3>
                   <p className="text-xs mt-1 leading-relaxed">{error}</p>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="mt-3 border-red-400 text-red-800 hover:bg-red-100 dark:text-red-200 dark:border-red-700"
+                    onClick={() => loadData(selectedStation.lat, selectedStation.lon, false)}
+                  >
+                    Retry observation request
+                  </Button>
                 </div>
               </div>
+            </div>
+          )}
+
+          {/* Empty State: distinct from zero pollution */}
+          {!isLoading && !error && !observation && (
+            <div className="rounded-xl border border-amber-200 bg-amber-50 p-6 text-amber-900 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200" role="status">
+              <h3 className="text-sm font-bold">No observation available</h3>
+              <p className="text-xs mt-1">
+                No provider returned a usable reading for these exact coordinates. This is not a
+                zero-pollution result. Try another location or retry the request.
+              </p>
+              <Button
+                variant="outline"
+                size="sm"
+                className="mt-3 border-amber-400"
+                onClick={() => loadData(selectedStation.lat, selectedStation.lon, false)}
+              >
+                Retry observation request
+              </Button>
             </div>
           )}
 
           {/* Real-Time Observation Content */}
           {!isLoading && observation && (
             <div className="space-y-6">
+              {(observation.data_quality_status === "stale" ||
+                observation.data_quality_status === "delayed" ||
+                observation.data_quality_status === "unavailable") && (
+                <div
+                  className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200"
+                  role="status"
+                >
+                  <strong className="uppercase">{observation.data_quality_status} data:</strong>{" "}
+                  Do not treat this observation as live. Check the source timestamp before acting.
+                </div>
+              )}
+
+              {observation.notes && (
+                <p className="text-[11px] text-slate-500 dark:text-slate-400 whitespace-pre-line">
+                  {observation.notes}
+                </p>
+              )}
+
               {/* Summary Cards Grid */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 <Card className="md:col-span-1 flex flex-col justify-between border-slate-300 shadow-md">
                   <CardHeader>
                     <CardTitle className="text-sm font-medium text-slate-500 dark:text-slate-400">
-                      National Air Quality Index (NAQI)
+                      Official CPCB AQI
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-4">
                     <div className="flex items-baseline gap-3">
                       <span className="text-5xl font-black text-slate-900 dark:text-slate-100 tracking-tight">
-                        {observation.calculated_aqi ?? "N/A"}
+                        {observation.calculated_aqi ?? "Unavailable"}
                       </span>
                       <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">
-                        Index Value
+                        {observation.calculated_aqi === null || observation.calculated_aqi === undefined
+                          ? "Insufficient verified averaging data"
+                          : "Index Value"}
                       </span>
                     </div>
 
@@ -440,6 +600,27 @@ export default function HomePage() {
                       <span className="text-slate-500">Provider Source:</span>
                       <p className="font-semibold text-slate-800 dark:text-slate-200">
                         {observation.provider}
+                      </p>
+                    </div>
+
+                    <div className="space-y-1">
+                      <span className="text-slate-500">Reporting Station:</span>
+                      <p className="font-semibold text-slate-800 dark:text-slate-200">
+                        {observation.station.station_name}, {observation.station.city},{" "}
+                        {observation.station.state}
+                      </p>
+                      <p className="text-[11px] text-slate-500">
+                        Station coordinates: {observation.station.latitude.toFixed(4)}°N,{" "}
+                        {observation.station.longitude.toFixed(4)}°E
+                      </p>
+                    </div>
+
+                    <div className="space-y-1">
+                      <span className="text-slate-500">Retrieved At:</span>
+                      <p className="font-semibold text-slate-800 dark:text-slate-200">
+                        {new Date(observation.retrieval_timestamp).toLocaleString("en-IN", {
+                          timeZone: "Asia/Kolkata",
+                        })}
                       </p>
                     </div>
 
@@ -498,9 +679,18 @@ export default function HomePage() {
                       <span className="text-2xl font-bold text-slate-900 dark:text-slate-100 block">
                         {reading.value}
                       </span>
-                      <span className="text-[11px] text-slate-500 block mb-2">
-                        {reading.unit}
+                      <span className="text-[10px] font-semibold text-slate-500 uppercase block">
+                        Average concentration
                       </span>
+                      <span className="text-[11px] text-slate-500 block mb-2">
+                        {reading.unit ?? "Unit not provided by source"}
+                      </span>
+                      {(reading.min_value !== undefined ||
+                        reading.max_value !== undefined) && (
+                        <span className="text-[10px] text-slate-500 block">
+                          Min {reading.min_value ?? "—"} / Max {reading.max_value ?? "—"}
+                        </span>
+                      )}
                       {reading.sub_index !== undefined && reading.sub_index !== null && (
                         <div className="text-[10px] font-semibold text-emerald-700 bg-emerald-50 rounded-sm py-0.5 dark:bg-emerald-950/60 dark:text-emerald-300">
                           Sub-Index: {reading.sub_index}
@@ -517,7 +707,13 @@ export default function HomePage() {
 
       {/* TAB 2: DAILY ACTION PLANNER */}
       {activeTab === "planner" && (
-        <section aria-labelledby="planner-heading" className="space-y-4">
+        <section
+          id="panel-planner"
+          role="tabpanel"
+          aria-labelledby="tab-planner"
+          tabIndex={0}
+          className="space-y-4 focus:outline-none"
+        >
           <div className="flex items-center justify-between">
             <h2 id="planner-heading" className="text-xl font-bold text-slate-900 dark:text-slate-100">
               Personalized Daily Action Planner
@@ -538,7 +734,13 @@ export default function HomePage() {
 
       {/* TAB 3: INDOOR AIR QUALITY ASSISTANT */}
       {activeTab === "indoor" && (
-        <section aria-labelledby="indoor-heading" className="space-y-4">
+        <section
+          id="panel-indoor"
+          role="tabpanel"
+          aria-labelledby="tab-indoor"
+          tabIndex={0}
+          className="space-y-4 focus:outline-none"
+        >
           <h2 id="indoor-heading" className="text-xl font-bold text-slate-900 dark:text-slate-100">
             Evidence-Based Indoor Air Quality Assistant
           </h2>
@@ -553,7 +755,13 @@ export default function HomePage() {
 
       {/* TAB 4: SUSTAINABLE ALTERNATIVES */}
       {activeTab === "sustainability" && (
-        <section aria-labelledby="sustainability-heading" className="space-y-4">
+        <section
+          id="panel-sustainability"
+          role="tabpanel"
+          aria-labelledby="tab-sustainability"
+          tabIndex={0}
+          className="space-y-4 focus:outline-none"
+        >
           <h2 id="sustainability-heading" className="text-xl font-bold text-slate-900 dark:text-slate-100">
             Sustainable Mobility & Emission Impact
           </h2>
@@ -565,11 +773,18 @@ export default function HomePage() {
 
       {/* TAB 5: 24-HOUR TRENDS */}
       {activeTab === "trends" && (
-        <section aria-labelledby="trends-heading" className="space-y-6">
+        <section
+          id="panel-trends"
+          role="tabpanel"
+          aria-labelledby="tab-trends"
+          tabIndex={0}
+          className="space-y-6 focus:outline-none"
+        >
           {observation?.hourly_trend && observation.hourly_trend.length > 0 ? (
             <HistoricalTrendChart
               data={observation.hourly_trend}
               stationName={selectedStation.name}
+              sourceLabel={observation.provider}
             />
           ) : (
             <div className="py-12 text-center text-xs text-slate-500">
@@ -581,28 +796,91 @@ export default function HomePage() {
 
       {/* TAB 6: STATION COMPARISON */}
       {activeTab === "comparison" && (
-        <section aria-labelledby="comparison-heading">
+        <section
+          id="panel-comparison"
+          role="tabpanel"
+          aria-labelledby="tab-comparison"
+          tabIndex={0}
+          className="focus:outline-none"
+        >
           <StationComparisonView />
         </section>
       )}
 
       {/* TAB 7: STATION MAP */}
       {activeTab === "map" && (
-        <section aria-labelledby="map-heading">
-          <StationMap
-            stations={POPULAR_CITIES}
-            selectedStationId={selectedStation.station_id}
-            onSelectStation={(stn) => {
-              setSelectedStation(stn);
-              setActiveTab("overview");
-            }}
-          />
+        <section
+          id="panel-map"
+          role="tabpanel"
+          aria-labelledby="tab-map"
+          tabIndex={0}
+          className="space-y-3 focus:outline-none"
+        >
+          <h2 id="map-heading" className="text-xl font-bold text-slate-900 dark:text-slate-100">
+            Monitoring Station Map
+          </h2>
+          {liveStations.length > 0 ? (
+            <>
+              <p className="text-xs text-slate-500">
+                Markers use reported CPCB station coordinates from {stationsSource}.
+              </p>
+              <StationMap
+                stations={liveStations}
+                selectedStationId={selectedStation.station_id}
+                onSelectStation={(stn) => {
+                  setSelectedStation(stn);
+                  setActiveTab("overview");
+                }}
+              />
+            </>
+          ) : (
+            <div
+              className="rounded-xl border border-amber-200 bg-amber-50 p-6 text-xs text-amber-900 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200"
+              role="status"
+            >
+              Live station coordinates are unavailable ({stationsSource ?? "unknown source"}). The
+              map is intentionally hidden instead of plotting estimated city-centre positions.
+              <Button
+                variant="outline"
+                size="sm"
+                className="ml-3 border-amber-400"
+                onClick={() =>
+                  fetchStations()
+                    .then((result) => {
+                      const isLiveCpcb = result.message?.includes("CPCB/data.gov.in") ?? false;
+                      setStationsSource(isLiveCpcb ? "CPCB/data.gov.in" : result.message ?? "source unavailable");
+                      setLiveStations(
+                        isLiveCpcb
+                          ? result.data.map((station) => ({
+                              name: station.station_name,
+                              station_id: station.station_id,
+                              city: station.city,
+                              state: station.state,
+                              lat: station.latitude,
+                              lon: station.longitude,
+                            }))
+                          : []
+                      );
+                    })
+                    .catch(() => setStationsSource("source unavailable"))
+                }
+              >
+                Retry station lookup
+              </Button>
+            </div>
+          )}
         </section>
       )}
 
       {/* TAB 8: AI ASSISTANT */}
       {activeTab === "assistant" && (
-        <section aria-labelledby="assistant-heading" className="h-[72vh] flex flex-col rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden shadow-sm">
+        <section
+          id="panel-assistant"
+          role="tabpanel"
+          aria-labelledby="tab-assistant"
+          tabIndex={0}
+          className="h-[72vh] flex flex-col rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden shadow-sm focus:outline-none"
+        >
           <h2 id="assistant-heading" className="sr-only">
             BreatheWise AI Assistant
           </h2>

@@ -135,7 +135,7 @@ class OpenAQAdapter(AirQualityAdapter):
         self, loc: Dict[str, Any], meas_data: List[Dict[str, Any]], lat: float, lon: float
     ) -> Optional[NormalizedObservation]:
         readings: Dict[PollutantType, NormalizedPollutantReading] = {}
-        latest_ts = datetime.now(timezone.utc)
+        reported_timestamps: List[datetime] = []
 
         for m in meas_data:
             param = str(m.get("parameter", "")).lower()
@@ -164,18 +164,19 @@ class OpenAQAdapter(AirQualityAdapter):
                 averaging_period_hours=8 if p_type in (PollutantType.CO, PollutantType.O3) else 24,
             )
 
-            # Extract measurement timestamp
+            # Use the latest reported measurement time, never retrieval time.
             dt_str = m.get("datetime")
             if dt_str:
                 try:
                     dt = datetime.fromisoformat(dt_str.replace("Z", "+00:00"))
-                    if dt > latest_ts or latest_ts == datetime.now(timezone.utc):
-                        latest_ts = dt
-                except Exception:
-                    pass
+                    reported_timestamps.append(dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc))
+                except (TypeError, ValueError):
+                    continue
 
-        if not readings:
+        if not readings or not reported_timestamps:
             return None
+
+        latest_ts = max(reported_timestamps)
 
         calc_result = compute_official_cpcb_aqi(readings)
         coords = loc.get("coordinates", {})

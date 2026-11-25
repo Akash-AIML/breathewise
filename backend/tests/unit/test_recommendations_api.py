@@ -19,6 +19,7 @@ async def test_generate_plan_endpoint():
         }
         resp = await client.post("/api/v1/recommendations/plan", json=payload)
         assert resp.status_code == 200
+        assert resp.headers["cache-control"] == "no-store"
         data = resp.json()
         assert "environmental_assessment" in data
         assert "morning_recommendations" in data
@@ -30,7 +31,9 @@ async def test_generate_plan_endpoint():
 @pytest.mark.asyncio
 async def test_get_indoor_guidance_endpoint():
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        resp = await client.get("/api/v1/recommendations/indoor", params={"area_sqft": 800, "aqi": 250})
+        resp = await client.get(
+            "/api/v1/recommendations/indoor", params={"area_sqft": 800, "aqi": 250}
+        )
         assert resp.status_code == 200
         data = resp.json()
         assert data["hepa_sizing_cadr_m3_hr"] > 0
@@ -41,7 +44,9 @@ async def test_get_indoor_guidance_endpoint():
 @pytest.mark.asyncio
 async def test_get_sustainable_alternatives_endpoint():
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        resp = await client.get("/api/v1/recommendations/sustainable-alternatives", params={"aqi": 320})
+        resp = await client.get(
+            "/api/v1/recommendations/sustainable-alternatives", params={"aqi": 320}
+        )
         assert resp.status_code == 200
         data = resp.json()
         assert len(data) >= 3

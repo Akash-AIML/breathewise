@@ -1,6 +1,7 @@
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import httpx
 
@@ -8,6 +9,7 @@ from app.adapters.base import AirQualityAdapter
 from app.core.aqi_calculator import compute_official_cpcb_aqi
 from app.core.config import settings
 from app.schemas.observation import (
+    DataQualityStatus,
     HourlyTrendPoint,
     NormalizedObservation,
     NormalizedPollutantReading,
@@ -45,7 +47,11 @@ class OpenMeteoAdapter(AirQualityAdapter):
             "longitude": round(longitude, 4),
             "current": "pm10,pm2_5,carbon_monoxide,nitrogen_dioxide,sulphur_dioxide,ozone",
             "hourly": "pm10,pm2_5,carbon_monoxide,nitrogen_dioxide,sulphur_dioxide,ozone",
-            "timezone": "Asia/Kolkata",
+            # Two past days are required to build genuine rolling 24-hour
+            # averages for the last 24 completed hours at any location.
+            "past_days": 2,
+            "forecast_days": 1,
+            "timezone": "auto",
         }
 
         try:
@@ -66,6 +72,124 @@ class OpenMeteoAdapter(AirQualityAdapter):
     ) -> List[StationMetadata]:
         return []
 
+    @staticmethod
+    def _resolve_timezone(data: Dict[str, Any]):
+        name = data.get("timezone")
+        if name:
+            try:
+                return ZoneInfo(name)
+            except (ZoneInfoNotFoundError, ValueError):
+                logger.warning("OpenMeteoAdapter: unknown timezone %s; using IST fallback", name)
+        return timezone(timedelta(hours=5, minutes=30))
+
+    @staticmethod
+    def _parse_local_time(value: Optional[str], tz) -> Optional[datetime]:
+        if not value:
+            return None
+        try:
+            dt = datetime.fromisoformat(value)
+        except ValueError:
+            return None
+        return dt.astimezone(tz) if dt.tzinfo else dt.replace(tzinfo=tz)
+
+    @staticmethod
+    def _rolling_average(series: List[Any], end_index: int, hours: int) -> Optional[float]:
+        """Average exactly `hours` values ending at end_index; nulls reject the window."""
+        start_index = end_index - hours + 1
+        if start_index < 0 or end_index >= len(series):
+            return None
+        window = series[start_index : end_index + 1]
+        values = [float(v) for v in window if isinstance(v, (int, float)) and v >= 0]
+        if len(values) != hours:
+            return None
+        return sum(values) / hours
+
+    @staticmethod
+    def _rolling_values_at(hourly_data: Dict[str, Any], index: int) -> Dict[PollutantType, float]:
+        series_map = {
+            PollutantType.PM2_5: ("pm2_5", 24),
+            PollutantType.PM10: ("pm10", 24),
+            PollutantType.NO2: ("nitrogen_dioxide", 24),
+            PollutantType.SO2: ("sulphur_dioxide", 24),
+            PollutantType.CO: ("carbon_monoxide", 8),
+            PollutantType.O3: ("ozone", 8),
+        }
+        values: Dict[PollutantType, float] = {}
+        for pollutant, (key, hours) in series_map.items():
+            average = OpenMeteoAdapter._rolling_average(hourly_data.get(key, []), index, hours)
+            if average is not None:
+                values[pollutant] = average
+        return values
+
+    @staticmethod
+    def _build_readings(
+        values: Dict[PollutantType, float], averaged: bool
+    ) -> Dict[PollutantType, NormalizedPollutantReading]:
+        readings: Dict[PollutantType, NormalizedPollutantReading] = {}
+        for pollutant, value in values.items():
+            if pollutant == PollutantType.CO:
+                reading = NormalizedPollutantReading(
+                    pollutant=pollutant,
+                    value=round(value / 1000.0, 2),
+                    unit="mg/m³",
+                    averaging_period_hours=8 if averaged else 1,
+                )
+            else:
+                reading = NormalizedPollutantReading(
+                    pollutant=pollutant,
+                    value=round(value, 1),
+                    unit="µg/m³",
+                    averaging_period_hours=(
+                        (
+                            24
+                            if pollutant
+                            in (
+                                PollutantType.PM2_5,
+                                PollutantType.PM10,
+                                PollutantType.NO2,
+                                PollutantType.SO2,
+                            )
+                            else 8
+                        )
+                        if averaged
+                        else 1
+                    ),
+                )
+            readings[pollutant] = reading
+        return readings
+
+    @staticmethod
+    def _instant_values(current: Dict[str, Any]) -> Dict[PollutantType, float]:
+        raw_map = {
+            PollutantType.PM2_5: "pm2_5",
+            PollutantType.PM10: "pm10",
+            PollutantType.NO2: "nitrogen_dioxide",
+            PollutantType.SO2: "sulphur_dioxide",
+            PollutantType.CO: "carbon_monoxide",
+            PollutantType.O3: "ozone",
+        }
+        values: Dict[PollutantType, float] = {}
+        for pollutant, key in raw_map.items():
+            value = current.get(key)
+            if isinstance(value, (int, float)) and value >= 0:
+                values[pollutant] = float(value)
+        return values
+
+    @staticmethod
+    def _completed_hour_indices(data: Dict[str, Any], tz) -> List[int]:
+        hourly = data.get("hourly", {})
+        times = hourly.get("time", [])
+        current_dt = OpenMeteoAdapter._parse_local_time(data.get("current", {}).get("time"), tz)
+        if not times or current_dt is None:
+            return []
+        current_hour = current_dt.replace(minute=0, second=0, microsecond=0)
+        indices: List[int] = []
+        for index, value in enumerate(times):
+            point_dt = OpenMeteoAdapter._parse_local_time(value, tz)
+            if point_dt is not None and point_dt < current_hour:
+                indices.append(index)
+        return indices
+
     def _parse_response(
         self, data: Dict[str, Any], lat: float, lon: float
     ) -> Optional[NormalizedObservation]:
@@ -73,157 +197,83 @@ class OpenMeteoAdapter(AirQualityAdapter):
         if not current:
             return None
 
-        # Parse timestamp: ISO8601 string, e.g. "2026-11-24T16:30"
-        time_str = current.get("time")
-        try:
-            naive_dt = datetime.fromisoformat(time_str)
-            from datetime import timedelta
-            from datetime import timezone as tz
-
-            ist = tz(timedelta(hours=5, minutes=30))
-            meas_time = naive_dt.replace(tzinfo=ist)
-        except Exception:
-            meas_time = datetime.now(timezone.utc)
-
-        readings: Dict[PollutantType, NormalizedPollutantReading] = {}
-
-        # PM2.5
-        pm25_val = current.get("pm2_5")
-        if pm25_val is not None and pm25_val >= 0.0:
-            readings[PollutantType.PM2_5] = NormalizedPollutantReading(
-                pollutant=PollutantType.PM2_5,
-                value=round(float(pm25_val), 1),
-                unit="µg/m³",
-                averaging_period_hours=24,
-            )
-
-        # PM10
-        pm10_val = current.get("pm10")
-        if pm10_val is not None and pm10_val >= 0.0:
-            readings[PollutantType.PM10] = NormalizedPollutantReading(
-                pollutant=PollutantType.PM10,
-                value=round(float(pm10_val), 1),
-                unit="µg/m³",
-                averaging_period_hours=24,
-            )
-
-        # NO2
-        no2_val = current.get("nitrogen_dioxide")
-        if no2_val is not None and no2_val >= 0.0:
-            readings[PollutantType.NO2] = NormalizedPollutantReading(
-                pollutant=PollutantType.NO2,
-                value=round(float(no2_val), 1),
-                unit="µg/m³",
-                averaging_period_hours=24,
-            )
-
-        # SO2
-        so2_val = current.get("sulphur_dioxide")
-        if so2_val is not None and so2_val >= 0.0:
-            readings[PollutantType.SO2] = NormalizedPollutantReading(
-                pollutant=PollutantType.SO2,
-                value=round(float(so2_val), 1),
-                unit="µg/m³",
-                averaging_period_hours=24,
-            )
-
-        # CO: Open-Meteo returns CO in µg/m³; CPCB formula requires mg/m³
-        co_val = current.get("carbon_monoxide")
-        if co_val is not None and co_val >= 0.0:
-            co_mg_m3 = round(float(co_val) / 1000.0, 2)
-            readings[PollutantType.CO] = NormalizedPollutantReading(
-                pollutant=PollutantType.CO,
-                value=co_mg_m3,
-                unit="mg/m³",
-                averaging_period_hours=8,
-            )
-
-        # Ozone (O3)
-        o3_val = current.get("ozone")
-        if o3_val is not None and o3_val >= 0.0:
-            readings[PollutantType.O3] = NormalizedPollutantReading(
-                pollutant=PollutantType.O3,
-                value=round(float(o3_val), 1),
-                unit="µg/m³",
-                averaging_period_hours=8,
-            )
-
-        if not readings:
-            return None
-
-        # Compute official CPCB Indian AQI
-        calc_result = compute_official_cpcb_aqi(readings)
-
-        # Parse Hourly Historical & Forecast Trend (up to 24 hourly points)
-        hourly_trend: List[HourlyTrendPoint] = []
+        tz = self._resolve_timezone(data)
         hourly_data = data.get("hourly", {})
         times = hourly_data.get("time", [])
-        if times:
-            pm25_series = hourly_data.get("pm2_5", [])
-            pm10_series = hourly_data.get("pm10", [])
-            no2_series = hourly_data.get("nitrogen_dioxide", [])
-            so2_series = hourly_data.get("sulphur_dioxide", [])
-            co_series = hourly_data.get("carbon_monoxide", [])
-            o3_series = hourly_data.get("ozone", [])
+        completed_indices = self._completed_hour_indices(data, tz)
 
-            # Take up to the last 24 points available
-            count = min(len(times), 24)
-            start_idx = max(0, len(times) - 24) if len(times) > 24 else 0
+        # Prefer true CPCB averaging windows built from the hourly model series.
+        # Fall back to instantaneous values only when no completed hours exist,
+        # and label those readings as estimated rather than 24-hour averages.
+        values: Dict[PollutantType, float] = {}
+        averaged = False
+        meas_time = self._parse_local_time(current.get("time"), tz) or datetime.now(timezone.utc)
+        if completed_indices:
+            last_index = completed_indices[-1]
+            values = self._rolling_values_at(hourly_data, last_index)
+            if values:
+                averaged = True
+                meas_time = self._parse_local_time(times[last_index], tz) or meas_time
+        if not values:
+            values = self._instant_values(current)
+        if not values:
+            return None
 
-            for i in range(start_idx, start_idx + count):
-                h_readings: Dict[PollutantType, NormalizedPollutantReading] = {}
-                h_pm25 = pm25_series[i] if i < len(pm25_series) else None
-                h_pm10 = pm10_series[i] if i < len(pm10_series) else None
-                h_no2 = no2_series[i] if i < len(no2_series) else None
-                h_so2 = so2_series[i] if i < len(so2_series) else None
-                h_co = co_series[i] if i < len(co_series) else None
-                h_o3 = o3_series[i] if i < len(o3_series) else None
+        readings = self._build_readings(values, averaged=averaged)
+        calc_result = compute_official_cpcb_aqi(readings)
+        quality_status = calc_result.quality_status
+        notes = calc_result.reason
+        if averaged:
+            provenance = (
+                "Latest completed 24-hour rolling averages ending "
+                f"{meas_time.isoformat()}; Open-Meteo CAMS hourly model data."
+            )
+            notes = f"{notes}; {provenance}" if notes else provenance
+        else:
+            if quality_status == DataQualityStatus.VERIFIED:
+                quality_status = DataQualityStatus.ESTIMATED
+            note = "Instantaneous hourly concentrations used; CPCB 24-hour averaging unavailable."
+            notes = f"{notes}; {note}" if notes else note
 
-                if h_pm25 is not None and h_pm25 >= 0:
-                    h_readings[PollutantType.PM2_5] = NormalizedPollutantReading(
-                        pollutant=PollutantType.PM2_5, value=float(h_pm25), unit="µg/m³"
-                    )
-                if h_pm10 is not None and h_pm10 >= 0:
-                    h_readings[PollutantType.PM10] = NormalizedPollutantReading(
-                        pollutant=PollutantType.PM10, value=float(h_pm10), unit="µg/m³"
-                    )
-                if h_no2 is not None and h_no2 >= 0:
-                    h_readings[PollutantType.NO2] = NormalizedPollutantReading(
-                        pollutant=PollutantType.NO2, value=float(h_no2), unit="µg/m³"
-                    )
-                if h_so2 is not None and h_so2 >= 0:
-                    h_readings[PollutantType.SO2] = NormalizedPollutantReading(
-                        pollutant=PollutantType.SO2, value=float(h_so2), unit="µg/m³"
-                    )
-                if h_co is not None and h_co >= 0:
-                    h_readings[PollutantType.CO] = NormalizedPollutantReading(
-                        pollutant=PollutantType.CO, value=round(float(h_co) / 1000.0, 2), unit="mg/m³"
-                    )
-                if h_o3 is not None and h_o3 >= 0:
-                    h_readings[PollutantType.O3] = NormalizedPollutantReading(
-                        pollutant=PollutantType.O3, value=float(h_o3), unit="µg/m³"
-                    )
-
-                h_calc = compute_official_cpcb_aqi(h_readings) if len(h_readings) >= 3 else None
-
-                hourly_trend.append(
-                    HourlyTrendPoint(
-                        time=times[i],
-                        pm2_5=round(float(h_pm25), 1) if h_pm25 is not None else None,
-                        pm10=round(float(h_pm10), 1) if h_pm10 is not None else None,
-                        no2=round(float(h_no2), 1) if h_no2 is not None else None,
-                        so2=round(float(h_so2), 1) if h_so2 is not None else None,
-                        co=round(float(h_co) / 1000.0, 2) if h_co is not None else None,
-                        o3=round(float(h_o3), 1) if h_o3 is not None else None,
-                        aqi=h_calc.aqi if h_calc else None,
-                        category=h_calc.category if h_calc else None,
-                    )
+        # Last 24 completed hours only — never future forecast hours.
+        hourly_trend: List[HourlyTrendPoint] = []
+        for index in completed_indices[-24:]:
+            point_values = self._rolling_values_at(hourly_data, index)
+            point_readings = self._build_readings(point_values, averaged=True)
+            h_calc = compute_official_cpcb_aqi(point_readings) if point_readings else None
+            point_dt = self._parse_local_time(times[index], tz)
+            hourly_trend.append(
+                HourlyTrendPoint(
+                    time=point_dt.isoformat() if point_dt else times[index],
+                    pm2_5=round(point_values[PollutantType.PM2_5], 1)
+                    if PollutantType.PM2_5 in point_values
+                    else None,
+                    pm10=round(point_values[PollutantType.PM10], 1)
+                    if PollutantType.PM10 in point_values
+                    else None,
+                    no2=round(point_values[PollutantType.NO2], 1)
+                    if PollutantType.NO2 in point_values
+                    else None,
+                    so2=round(point_values[PollutantType.SO2], 1)
+                    if PollutantType.SO2 in point_values
+                    else None,
+                    co=round(point_values[PollutantType.CO] / 1000.0, 2)
+                    if PollutantType.CO in point_values
+                    else None,
+                    o3=round(point_values[PollutantType.O3], 1)
+                    if PollutantType.O3 in point_values
+                    else None,
+                    aqi=h_calc.aqi if h_calc else None,
+                    category=h_calc.category if h_calc else None,
                 )
+            )
 
         elevation = data.get("elevation", 0.0)
+        lat_label = f"{abs(lat):.4f}°{'N' if lat >= 0 else 'S'}"
+        lon_label = f"{abs(lon):.4f}°{'E' if lon >= 0 else 'W'}"
         station = StationMetadata(
-            station_id=f"openmeteo_{round(lat, 2)}_{round(lon, 2)}",
-            station_name=f"High-Res Observation Grid ({round(lat, 2)}°N, {round(lon, 2)}°E)",
+            station_id=f"openmeteo_{round(lat, 4)}_{round(lon, 4)}",
+            station_name=f"High-Res Observation Grid ({lat_label}, {lon_label})",
             city="Regional Grid Point",
             state="India",
             latitude=lat,
@@ -241,7 +291,7 @@ class OpenMeteoAdapter(AirQualityAdapter):
             data_sufficiency_met=calc_result.data_sufficiency_met,
             measurement_timestamp=meas_time,
             retrieval_timestamp=datetime.now(timezone.utc),
-            data_quality_status=calc_result.quality_status,
-            notes=calc_result.reason,
+            data_quality_status=quality_status,
+            notes=notes,
             hourly_trend=hourly_trend,
         )

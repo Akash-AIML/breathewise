@@ -1,4 +1,13 @@
-from app.services.air_quality_service import AirQualityService
+from datetime import datetime, timedelta, timezone
+
+import pytest
+
+from app.schemas.observation import (
+    DataQualityStatus,
+    NormalizedObservation,
+    StationMetadata,
+)
+from app.services.air_quality_service import AirQualityService, CacheEntry
 
 
 def test_station_registry_search_by_city():
@@ -13,6 +22,40 @@ def test_station_registry_search_empty_returns_all():
     service = AirQualityService()
     results = service.search_stations_by_query("")
     assert len(results) >= 10
+
+
+@pytest.mark.asyncio
+async def test_cache_uses_precise_coordinates_and_returns_isolated_copy():
+    service = AirQualityService()
+    observation = NormalizedObservation(
+        provider="openmeteo_cams",
+        station=StationMetadata(
+            station_id="grid",
+            station_name="Grid",
+            city="",
+            state="",
+            latitude=28.6289,
+            longitude=77.2407,
+        ),
+        measurement_timestamp=datetime.now(timezone.utc),
+        retrieval_timestamp=datetime.now(timezone.utc),
+        data_quality_status=DataQualityStatus.VERIFIED,
+    )
+    service._cache[service._get_cache_key(28.6289, 77.2407)] = CacheEntry(
+        observation, datetime.now(timezone.utc) + timedelta(minutes=5)
+    )
+
+    result = await service.get_air_quality_for_coordinates(28.6289, 77.2407)
+    assert result is not None
+    result.station.station_name = "mutated"
+    result.data_quality_status = DataQualityStatus.STALE
+    cached = await service.get_air_quality_for_coordinates(28.6289, 77.2407)
+    assert cached is not None
+    assert cached.station.station_name == "Grid"
+    assert cached.data_quality_status == DataQualityStatus.VERIFIED
+
+    # A nearby but distinct precise location must not hit the same cache entry.
+    assert service._get_cache_key(28.6290, 77.2407) != service._get_cache_key(28.6289, 77.2407)
 
 
 def test_nearby_stations_discovery():

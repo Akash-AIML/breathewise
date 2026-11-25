@@ -2,6 +2,7 @@ import logging
 
 from fastapi import APIRouter, HTTPException, Query, status
 
+from app.core.config import settings
 from app.schemas.api import AirQualityResponse
 from app.services.air_quality_service import AirQualityService
 
@@ -21,6 +22,12 @@ async def get_air_quality(
     Evaluates official CPCB AQI using multi-tier fallback.
     Returns honest unavailable response if all external sources fail.
     """
+    if bypass_cache and settings.ENVIRONMENT.lower() == "production":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Cache bypass is disabled in production.",
+        )
+
     try:
         observation = await air_quality_service.get_air_quality_for_coordinates(
             latitude=lat, longitude=lon, bypass_cache=bypass_cache

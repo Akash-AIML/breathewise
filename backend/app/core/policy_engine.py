@@ -99,7 +99,6 @@ def generate_indoor_guidance(profile: HouseholdProfile, aqi: Optional[int]) -> I
     """
     area = profile.home_area_sqft or 600
     cadr = calculate_hepa_cadr_m3_hr(area)
-    current_aqi = aqi or 150
 
     explanation = (
         f"For a domestic carpet area of ~{area} sq.ft. with standard 2.5m ceiling height, "
@@ -115,22 +114,26 @@ def generate_indoor_guidance(profile: HouseholdProfile, aqi: Optional[int]) -> I
     ]
 
     # Ventilation advice: distinguish outdoor pollution from indoor cooking/combustion sources
-    if current_aqi > 250:
+    if aqi is None:
+        vent_advice = (
+            "Official AQI is currently unavailable, so outdoor ventilation safety cannot be established. "
+            "Keep windows closed, rely on mechanical filtration, and check validated AQI or official "
+            "CPCB advisories before opening the home to outdoor air."
+        )
+    elif aqi > 250:
         vent_advice = (
             "Keep external windows and balcony doors sealed during early morning and late night inversions. "
             "However, if cooking on gas or if indoor air feels heavy with carbon dioxide, perform brief (10-15 min) "
             "cross-ventilation during mid-afternoon (1 PM - 4 PM) when atmospheric mixing height is highest, "
             "then seal and run HEPA filtration on high mode."
         )
-    elif current_aqi > 100:
+    elif aqi > 100:
         vent_advice = (
             "Open windows for cross-ventilation during warm afternoon hours (12 PM - 3 PM) when ambient particulate "
             "levels dip. Seal windows in early morning hours when cool air traps local emissions near the ground."
         )
     else:
-        vent_advice = (
-            "Ambient air quality is acceptable. Maintain regular cross-ventilation to prevent domestic CO2 and VOC buildup."
-        )
+        vent_advice = "Ambient air quality is acceptable. Maintain regular cross-ventilation to prevent domestic CO2 and VOC buildup."
 
     cooking_precautions = [
         "Chimney / Exhaust Operation: Always engage kitchen exhaust or electric chimney at maximum speed before heating oil or performing 'tadka' (tempering).",
@@ -169,7 +172,6 @@ def generate_sustainable_alternatives(
     MODULE 6: Sustainable Alternatives with Documented Emission Factors.
     Distinguishes emission reduction benefits from personal exposure trade-offs.
     """
-    current_aqi = aqi or 150
     alternatives: List[SustainableAlternative] = []
 
     # 1. Electric Metro / Urban Rail
@@ -210,10 +212,16 @@ def generate_sustainable_alternatives(
 
     # 3. Active Transit (Walking / Cycling) - Evaluated with critical exposure trade-off
     bike_factor = EMISSION_FACTORS["walking_cycling"]
-    if current_aqi > 200:
+    if aqi is None:
+        cycling_note = (
+            "Official AQI is unavailable, so outdoor active-transit safety is withheld until validated "
+            "telemetry exists. Zero-emission travel remains environmentally preferable, but use metro or "
+            "enclosed public transport until exposure conditions are known."
+        )
+    elif aqi > 200:
         cycling_note = (
             "CRITICAL EXPOSURE TRADE-OFF: While walking or cycling produces 0.0 g CO2/km emissions, vigorous active transit "
-            f"in current AQI ({current_aqi}) increases your respiratory minute ventilation rate by 300-500%, forcing deep "
+            f"in current AQI ({aqi}) increases your respiratory minute ventilation rate by 300-500%, forcing deep "
             "alveolar deposition of fine combustion soot. DO NOT cycle or jog outdoors during severe air episodes; use metro or bus."
         )
     else:
@@ -239,7 +247,7 @@ def generate_personalized_plan(
     STAGE 2: Deterministic Personalization Policy Engine
     Translates environmental risk + household vulnerability into actionable daily routines.
     """
-    aqi = assessment.aqi or 150
+    aqi = assessment.aqi
     is_vulnerable = (
         profile.has_children
         or profile.has_elderly
@@ -253,7 +261,22 @@ def generate_personalized_plan(
 
     # --- MORNING RECOMMENDATIONS ---
     # Morning is typically characterized by surface temperature inversion and stagnant emissions in Indian cities
-    if aqi > 200:
+    if aqi is None:
+        morning_items.append(
+            RecommendationItem(
+                id="rec_morn_aqi_unavailable",
+                category="planner",
+                title="Hold Strenuous Morning Outdoor Activity",
+                time_of_day="morning",
+                action="Use an indoor routine until validated AQI is available; do not assume the air is safe.",
+                priority="high" if is_vulnerable else "medium",
+                reason="Official CPCB AQI could not be established from the available telemetry.",
+                supporting_evidence="CPCB data-sufficiency rule requires at least three valid pollutants including PM2.5 or PM10.",
+                expected_impact="positive_exposure_reduction",
+                limitations="Re-check validated telemetry before resuming outdoor exertion.",
+            )
+        )
+    elif aqi > 200:
         morning_items.append(
             RecommendationItem(
                 id="rec_morn_exercise_cancel",
@@ -299,7 +322,21 @@ def generate_personalized_plan(
 
     # Vulnerability check for school children
     if profile.has_children:
-        if aqi > 150:
+        if aqi is None:
+            morning_items.append(
+                RecommendationItem(
+                    id="rec_morn_school_unknown",
+                    category="protective",
+                    title="Confirm AQI Before Children's Outdoor Play",
+                    time_of_day="morning",
+                    action="Keep children's outdoor play optional until validated AQI is available; follow school and official advisories.",
+                    priority="high",
+                    reason="Children are vulnerable and current air quality has not been validated.",
+                    supporting_evidence="WHO guidelines advise reducing children's exposure when air quality is uncertain or degraded.",
+                    expected_impact="positive_exposure_reduction",
+                )
+            )
+        elif aqi > 150:
             morning_items.append(
                 RecommendationItem(
                     id="rec_morn_school_commute",
@@ -330,7 +367,21 @@ def generate_personalized_plan(
 
     # Commute suggestion for two-wheeler / bus commuters
     if profile.commute_method in ("two_wheeler", "bus", "walking_cycling"):
-        if aqi > 100:
+        if aqi is None:
+            morning_items.append(
+                RecommendationItem(
+                    id="rec_morn_commute_unknown",
+                    category="commute",
+                    title="Use Enclosed Transit While AQI Is Unverified",
+                    time_of_day="morning",
+                    action="Prefer metro or enclosed transport and carry a certified respirator until validated AQI is available.",
+                    priority="medium",
+                    reason="Roadside exposure cannot be risk-assessed without validated telemetry.",
+                    supporting_evidence="Bureau of Indian Standards (BIS) IS 9473 / NIOSH N95 certification standards.",
+                    expected_impact="positive_exposure_reduction",
+                )
+            )
+        elif aqi > 100:
             morning_items.append(
                 RecommendationItem(
                     id="rec_morn_commute_n95",
@@ -375,7 +426,21 @@ def generate_personalized_plan(
 
     # --- AFTERNOON RECOMMENDATIONS ---
     # Afternoon has maximum solar radiation (ozone peak) and higher mixing boundary layer
-    if aqi > 150:
+    if aqi is None:
+        afternoon_items.append(
+            RecommendationItem(
+                id="rec_aft_aqi_unavailable",
+                category="indoor",
+                title="Keep Windows Closed Until AQI Is Validated",
+                time_of_day="afternoon",
+                action="Use mechanical filtration and avoid opening windows for ventilation until validated AQI is available.",
+                priority="medium",
+                reason="Outdoor pollution levels cannot be verified from the current telemetry.",
+                supporting_evidence="CPCB data-sufficiency rule for official AQI computation.",
+                expected_impact="positive_exposure_reduction",
+            )
+        )
+    elif aqi > 150:
         afternoon_items.append(
             RecommendationItem(
                 id="rec_aft_ozone_awareness",
@@ -422,7 +487,21 @@ def generate_personalized_plan(
 
     # --- EVENING RECOMMENDATIONS ---
     # Evening rush hour traffic + cooling temperature triggers evening smoke & particulate spike
-    if aqi > 150:
+    if aqi is None:
+        evening_items.append(
+            RecommendationItem(
+                id="rec_eve_aqi_unavailable",
+                category="planner",
+                title="Limit Optional Outdoor Evening Activities",
+                time_of_day="evening",
+                action="Choose indoor evening routines until validated AQI is available; re-check official advisories later.",
+                priority="medium",
+                reason="Evening exposure cannot be risk-assessed without validated telemetry.",
+                supporting_evidence="CPCB data-sufficiency rule for official AQI computation.",
+                expected_impact="positive_exposure_reduction",
+            )
+        )
+    elif aqi > 150:
         evening_items.append(
             RecommendationItem(
                 id="rec_eve_traffic_avoidance",

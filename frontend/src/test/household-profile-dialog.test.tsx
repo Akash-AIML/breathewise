@@ -32,6 +32,47 @@ describe("HouseholdProfileDialog Component", () => {
     expect(screen.getByText("Asthma / Bronchitis / Allergy")).toBeInTheDocument();
   });
 
+  it("closes on Escape and restores focus to the trigger", () => {
+    const handleClose = vi.fn();
+    const trigger = document.createElement("button");
+    document.body.appendChild(trigger);
+    trigger.focus();
+
+    const { unmount } = render(
+      <HouseholdProfileDialog
+        isOpen={true}
+        onClose={handleClose}
+        profile={initialProfile}
+        onSave={vi.fn()}
+      />
+    );
+
+    // Initial focus moves into the dialog.
+    expect(screen.getByRole("button", { name: "Close profile setup" })).toHaveFocus();
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(handleClose).toHaveBeenCalledTimes(1);
+
+    unmount();
+    expect(trigger).toHaveFocus();
+    trigger.remove();
+  });
+
+  it("traps Tab focus inside the dialog", () => {
+    const { container } = render(
+      <HouseholdProfileDialog
+        isOpen={true}
+        onClose={vi.fn()}
+        profile={initialProfile}
+        onSave={vi.fn()}
+      />
+    );
+    const saveButton = screen.getByRole("button", { name: "Save Household Profile" });
+    saveButton.focus();
+    fireEvent.keyDown(document, { key: "Tab" });
+    const firstFocusable = container.querySelector<HTMLElement>("button, input, select");
+    expect(firstFocusable).toHaveFocus();
+  });
+
   it("calls onSave with updated demographics upon submission", () => {
     const handleSave = vi.fn();
     render(

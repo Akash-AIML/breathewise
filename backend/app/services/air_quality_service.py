@@ -1,5 +1,4 @@
 import logging
-import math
 from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional, Tuple
 
@@ -7,6 +6,7 @@ from app.adapters.cpcb import CPCBAdapter
 from app.adapters.openaq import OpenAQAdapter
 from app.adapters.openmeteo import OpenMeteoAdapter
 from app.core.config import settings
+from app.core.geo import haversine_distance_km
 from app.schemas.observation import (
     DataQualityStatus,
     NormalizedObservation,
@@ -100,19 +100,6 @@ INDIAN_CITIES_REGISTRY: List[StationMetadata] = [
 ]
 
 
-def haversine_distance_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
-    """Calculate the great-circle distance between two points on Earth in km."""
-    r = 6371.0  # Earth's radius in kilometers
-    dlat = math.radians(lat2 - lat1)
-    dlon = math.radians(lon2 - lon1)
-    a = (
-        math.sin(dlat / 2.0) ** 2
-        + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon / 2.0) ** 2
-    )
-    c = 2.0 * math.atan2(math.sqrt(a), math.sqrt(1.0 - a))
-    return round(r * c, 2)
-
-
 class CacheEntry:
     def __init__(self, observation: NormalizedObservation, expires_at: datetime):
         self.observation = observation
@@ -129,14 +116,15 @@ class AirQualityService:
     """
 
     def __init__(self):
-        self.cpcb_adapter = CPCBAdapter()
+        self.cpcb_adapter = CPCBAdapter(station_registry=INDIAN_CITIES_REGISTRY)
         self.openaq_adapter = OpenAQAdapter()
         self.openmeteo_adapter = OpenMeteoAdapter()
         self._cache: Dict[str, CacheEntry] = {}
 
     def _get_cache_key(self, lat: float, lon: float) -> str:
-        # 2 decimal places approximates a ~1.1km grid
-        return f"{round(lat, 2)}:{round(lon, 2)}"
+        # Match the upstream request precision (~11 m) so nearby precise
+        # locations do not silently share an observation.
+        return f"{round(lat, 4)}:{round(lon, 4)}"
 
     def check_stale_status(self, observation: NormalizedObservation) -> NormalizedObservation:
         """Flags observations older than STALE_DATA_THRESHOLD_HOURS as STALE."""
@@ -147,9 +135,10 @@ class AirQualityService:
 
         age = now - meas_time
         if age > timedelta(hours=settings.STALE_DATA_THRESHOLD_HOURS):
-            observation.data_quality_status = DataQualityStatus.STALE
             note = f"Data is {round(age.total_seconds() / 3600, 1)} hours old (threshold is {settings.STALE_DATA_THRESHOLD_HOURS}h)"
-            observation.notes = f"{observation.notes}; {note}" if observation.notes else note
+            if not observation.notes or note not in observation.notes:
+                observation.data_quality_status = DataQualityStatus.STALE
+                observation.notes = f"{observation.notes}; {note}" if observation.notes else note
         return observation
 
     async def get_air_quality_for_coordinates(
@@ -172,7 +161,9 @@ class AirQualityService:
             entry = self._cache[cache_key]
             if not entry.is_expired():
                 logger.debug("Serving air quality from cache for %s", cache_key)
-                return entry.observation
+                # Return a copy: callers must not be able to mutate shared cache
+                # state, and staleness must be re-evaluated on every hit.
+                return self.check_stale_status(entry.observation.model_copy(deep=True))
 
         observation: Optional[NormalizedObservation] = None
 
@@ -206,9 +197,9 @@ class AirQualityService:
                     latitude, longitude, observation.station.latitude, observation.station.longitude
                 )
 
-            # Store in cache
+            # Store an immutable-to-callers copy in cache
             expires_at = datetime.now(timezone.utc) + timedelta(seconds=settings.CACHE_TTL_SECONDS)
-            self._cache[cache_key] = CacheEntry(observation, expires_at)
+            self._cache[cache_key] = CacheEntry(observation.model_copy(deep=True), expires_at)
             return observation
 
         # Honest unavailable state: return None
@@ -222,12 +213,67 @@ class AirQualityService:
         for station in INDIAN_CITIES_REGISTRY:
             dist = haversine_distance_km(latitude, longitude, station.latitude, station.longitude)
             if dist <= max_distance_km:
-                station_copy = station.model_copy()
+                station_copy = station.model_copy(update={"provider": "fallback_registry"})
                 station_copy.distance_km = dist
                 results.append((station_copy, dist))
 
         results.sort(key=lambda x: x[1])
         return results
+
+    async def search_nearby_stations_live(
+        self, latitude: float, longitude: float, max_distance_km: float = 50.0
+    ) -> Tuple[List[StationMetadata], str]:
+        """Prefer real CPCB stations; fall back to the labelled static registry."""
+        try:
+            stations = await self.cpcb_adapter.fetch_nearby(latitude, longitude, max_distance_km)
+        except Exception as exc:
+            logger.warning("Live station search failed: %s", str(exc))
+            stations = []
+        if stations:
+            return [station for station, _ in stations], "CPCB/data.gov.in"
+        return [
+            station
+            for station, _ in self.search_nearby_stations(latitude, longitude, max_distance_km)
+        ], "fallback_registry"
+
+    async def search_stations_live(
+        self,
+        query: Optional[str] = None,
+        city: Optional[str] = None,
+        state: Optional[str] = None,
+    ) -> Tuple[List[StationMetadata], str]:
+        """Search real CPCB station metadata, with a labelled registry fallback."""
+        observations = []
+        try:
+            observations = await self.cpcb_adapter.get_station_observations(city=city, state=state)
+        except Exception as exc:
+            logger.warning("Live CPCB station search failed: %s", str(exc))
+
+        needle = (query or "").strip().lower()
+        stations = [
+            StationMetadata(
+                station_id=obs.station_id,
+                station_name=obs.station,
+                city=obs.city,
+                state=obs.state,
+                latitude=obs.latitude,
+                longitude=obs.longitude,
+                provider="CPCB/data.gov.in",
+                source_observation_time=obs.last_update,
+            )
+            for obs in observations
+            if not needle
+            or needle in obs.station.lower()
+            or needle in obs.city.lower()
+            or needle in obs.state.lower()
+        ]
+        if stations:
+            return stations, "CPCB/data.gov.in"
+
+        fallback = self.search_stations_by_query(query or city or state or "")
+        return [
+            station.model_copy(update={"provider": "fallback_registry"}) for station in fallback
+        ], "fallback_registry"
 
     def search_stations_by_query(self, query: str) -> List[StationMetadata]:
         """Case-insensitive search across station names, cities, and states."""

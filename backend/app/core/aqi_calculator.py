@@ -87,6 +87,15 @@ def calculate_sub_index(pollutant: PollutantType, concentration: float) -> Optio
     if not breakpoints:
         return None
 
+    # CPCB tables are published with integer rows, leaving apparent gaps such
+    # as 50.5 between the 0-50 and 51-100 bands. Treat those values as the
+    # lower bound of the next (higher) band instead of silently dropping them.
+    for index, (_, previous_hi, _, _) in enumerate(breakpoints[:-1]):
+        next_lo = breakpoints[index + 1][0]
+        if previous_hi < concentration < next_lo:
+            concentration = next_lo
+            break
+
     # Check each bracket
     for b_lo, b_hi, i_lo, i_hi in breakpoints:
         if b_lo <= concentration <= b_hi:

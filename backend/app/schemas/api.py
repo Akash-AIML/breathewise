@@ -26,6 +26,7 @@ class StationsResponse(BaseModel):
     success: bool = True
     count: int = Field(..., ge=0)
     data: List[StationMetadata] = Field(default_factory=list)
+    message: Optional[str] = None
 
 
 class ErrorDetail(BaseModel):

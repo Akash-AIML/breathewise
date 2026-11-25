@@ -16,7 +16,8 @@ class HouseholdProfile(BaseModel):
         False, description="Presence of family members with asthma, COPD, or chronic bronchitis"
     )
     has_cardiovascular_sensitivity: bool = Field(
-        False, description="Presence of family members with hypertension, heart disease, or post-stroke"
+        False,
+        description="Presence of family members with hypertension, heart disease, or post-stroke",
     )
     occupation_type: Literal["indoor", "outdoor", "hybrid"] = Field(
         "indoor", description="Primary work environment"
@@ -29,16 +30,24 @@ class HouseholdProfile(BaseModel):
         "walking_cycling",
         "work_from_home",
     ] = Field("metro_train", description="Typical daily commute transport mode")
-    exercise_routine: Literal[
-        "none", "morning_outdoor", "evening_outdoor", "indoor_gym"
-    ] = Field("none", description="Physical workout routine")
+    exercise_routine: Literal["none", "morning_outdoor", "evening_outdoor", "indoor_gym"] = Field(
+        "none", description="Physical workout routine"
+    )
     indoor_ventilation: Literal["natural", "sealed_ac", "cross_ventilation"] = Field(
         "natural", description="Primary domestic ventilation method"
     )
-    has_air_purifier: bool = Field(False, description="Ownership of domestic mechanical HEPA purifiers")
+    has_air_purifier: bool = Field(
+        False, description="Ownership of domestic mechanical HEPA purifiers"
+    )
     approximate_budget_inr: Optional[int] = Field(
-        None, ge=0, le=500000, description="Approximate household budget for air quality protective measures (INR)"
+        None,
+        ge=0,
+        le=500000,
+        description="Approximate household budget for air quality protective measures (INR)",
     )
     home_area_sqft: Optional[int] = Field(
-        600, ge=100, le=10000, description="Estimated home carpet area in square feet for CADR calculations"
+        600,
+        ge=100,
+        le=10000,
+        description="Estimated home carpet area in square feet for CADR calculations",
     )

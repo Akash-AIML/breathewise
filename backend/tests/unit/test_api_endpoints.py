@@ -3,7 +3,12 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 from httpx import ASGITransport, AsyncClient
+from starlette.applications import Starlette
+from starlette.responses import PlainTextResponse
+from starlette.routing import Route
 
+from app.core.config import settings
+from app.core.security import RateLimitMiddleware
 from app.main import app
 from app.schemas.observation import (
     DataQualityStatus,
@@ -133,17 +138,34 @@ async def test_air_quality_validation_errors():
 
 
 @pytest.mark.asyncio
-async def test_rate_limiting():
-    # Test rate limiter directly on an endpoint with isolated test IP
-    headers = {"X-Test-Client-IP": "rate-limit-burst-ip"}
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        # Make a burst of requests to /api/v1/stations
-        for _ in range(125):
-            resp = await client.get("/api/v1/stations", headers=headers)
-            if resp.status_code == 429:
-                data = resp.json()
-                assert data["success"] is False
-                assert data["error_code"] == "RATE_LIMIT_EXCEEDED"
-                assert "Retry-After" in resp.headers
-                return
-        pytest.fail("Rate limiter did not trigger within 125 requests")
+async def test_rate_limiting_ignores_client_supplied_ip_header():
+    async def ok(request):
+        return PlainTextResponse("ok")
+
+    inner_app = Starlette(routes=[Route("/", ok)])
+    limiter = RateLimitMiddleware(inner_app, max_requests=2, window_seconds=60)
+    async with AsyncClient(transport=ASGITransport(app=limiter), base_url="http://test") as client:
+        assert (await client.get("/")).status_code == 200
+        assert (await client.get("/", headers={"X-Test-Client-IP": "spoof-1"})).status_code == 200
+        blocked = await client.get("/", headers={"X-Test-Client-IP": "spoof-2"})
+        assert blocked.status_code == 429
+        assert blocked.json()["error_code"] == "RATE_LIMIT_EXCEEDED"
+        assert "Retry-After" in blocked.headers
+
+
+@pytest.mark.asyncio
+async def test_cache_bypass_rejected_in_production():
+    with (
+        patch.object(settings, "ENVIRONMENT", "production"),
+        patch(
+            "app.api.v1.endpoints.air_quality.air_quality_service.get_air_quality_for_coordinates",
+            new_callable=AsyncMock,
+        ) as mock_get,
+    ):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            resp = await client.get(
+                "/api/v1/air-quality", params={"lat": 28.6289, "lon": 77.2407, "bypass_cache": True}
+            )
+    assert resp.status_code == 403
+    assert "disabled in production" in resp.json()["message"].lower()
+    mock_get.assert_not_awaited()

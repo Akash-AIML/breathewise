@@ -1,0 +1,13 @@
+{
+  "generatedAt": "2026-11-25T07:49:55.191Z",
+  "results": {
+    "HomePage": {
+      "passes": 21,
+      "violations": []
+    },
+    "HouseholdProfileDialog": {
+      "passes": 20,
+      "violations": []
+    }
+  }
+}

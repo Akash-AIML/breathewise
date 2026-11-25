@@ -2,10 +2,11 @@
 
 > **PromptWars Virtual Challenge 6 — Production-Quality Submission**
 
-[![Backend Tests](https://img.shields.io/badge/Backend%20Tests-65%20passing-brightgreen)](backend/tests)
-[![Coverage](https://img.shields.io/badge/Coverage-88%25-brightgreen)](backend)
+[![Backend Tests](https://img.shields.io/badge/Backend%20Tests-130%20passing-brightgreen)](backend/tests)
+[![Frontend Tests](https://img.shields.io/badge/Frontend%20Tests-47%20passing-brightgreen)](frontend/src/test)
+[![Coverage](https://img.shields.io/badge/Coverage-85%25-yellow)](docs/artifacts/coverage-html/index.html)
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-blue)](frontend)
-[![WCAG](https://img.shields.io/badge/WCAG-2.2%20AA-blue)](frontend)
+[![axe](https://img.shields.io/badge/axe-0%20violations-brightgreen)](docs/artifacts/axe-results.json)
 
 ---
 
@@ -73,6 +74,9 @@ BreatheWise helps Indian families navigate urban air pollution through:
 
 **Core Principle:** The LLM is restricted to narrating approved, deterministic outputs. It never calculates risk or invents measurements.
 
+> The platform names in this diagram are **configuration targets**, not live deployments. No Render
+> or Vercel deployment was performed here; see [`docs/DEPLOYMENT_STATUS.md`](docs/DEPLOYMENT_STATUS.md).
+
 ---
 
 ## Modules
@@ -95,9 +99,11 @@ BreatheWise helps Indian families navigate urban air pollution through:
 
 | Provider | Key Required | Coverage | Fallback Priority |
 |----------|-------------|----------|-----------------|
-| CPCB / data.gov.in | Yes (DATA_GOV_IN_API_KEY) | Official Indian NAQI values | Primary |
+| CPCB / data.gov.in | Yes (DATA_GOV_IN_API_KEY) | Station-reported pollutant min/max/avg; official AQI only when averaging is verified | Primary |
 | OpenAQ v3 | Yes (OPENAQ_API_KEY) | Global station network | Secondary |
 | Open-Meteo CAMS | No | ECMWF grid for India | Tertiary (always available) |
+
+See [`docs/CPCB_INTEGRATION.md`](docs/CPCB_INTEGRATION.md) for the resource schema, verified/unverified filter status, caching, freshness, and AQI limitations.
 
 ---
 
@@ -150,6 +156,10 @@ Copy `.env.example` to `.env` in the project root (or `backend/`):
 | `CACHE_TTL_SECONDS` | No | Observation cache TTL (default: 900s) |
 | `BACKEND_URL` | Frontend | URL of backend for Next.js rewrites |
 
+The complete list of CPCB pagination, timeout, freshness and cache settings is in
+[`docs/CPCB_INTEGRATION.md`](docs/CPCB_INTEGRATION.md); rate-limit store settings are in
+[`docs/RATE_LIMITING.md`](docs/RATE_LIMITING.md).
+
 > **Security:** Never commit `.env`. All AI keys are server-side only. Frontend never receives API keys.
 
 ---
@@ -161,23 +171,26 @@ Copy `.env.example` to `.env` in the project root (or `backend/`):
 ```bash
 cd backend
 source .venv/bin/activate
-pytest tests/ -v                              # All 65 tests
-coverage run -m pytest tests/ && coverage report  # With coverage (target: 88%)
+pytest tests/ -q     # 130 passed, 2 live tests skipped by default
+RUN_LIVE_TESTS=1 pytest tests/integration -q -m live   # opt-in; requires network + keys
+coverage run -m pytest tests/ -q && coverage report --include='app/*'  # app code: 85%
 ```
 
 Test categories:
-- `tests/unit/` — AQI calculator, policy engine, adapters, API endpoints, AI assistant
+- `tests/unit/` — AQI calculator, policy engine, adapters, API endpoints, AI assistant, CPCB integration, rate-limit stores, geocoding proxy
 - `tests/adversarial/` — stale data, missing pollutants, provider failures
-- `tests/integration/` — live Open-Meteo API probe
+- `tests/integration/` — opt-in live CPCB and Open-Meteo probes (`RUN_LIVE_TESTS=1`)
 
 ### Frontend
 
 ```bash
 cd frontend
 npm run type-check   # TypeScript strict mode
-npm run test:ci      # Vitest + React Testing Library
-npm run build        # Production build (~230kB JS)
+npm run test:ci      # Vitest + React Testing Library + axe; 47 passed
+npm run build        # Production build; First Load JS 240 kB
 ```
+
+All provider tests use mocked HTTP by default. Live tests are opt-in and are **not** part of CI.
 
 ---
 
@@ -219,7 +232,12 @@ Key endpoints:
 |--------|------|-------------|
 | GET | `/health` | Service health and version |
 | GET | `/api/v1/air-quality?lat=&lon=` | Real-time observation for coordinates |
-| GET | `/api/v1/stations?city=` | Station registry search |
+| GET | `/api/v1/air-quality/nearby?lat=&lon=` | Individual CPCB station observations with haversine distance |
+| GET | `/api/v1/air-quality/summary?city=&state=` | CPCB observations by exact city/state |
+| GET | `/api/v1/air-quality/station/{station_id}` | One CPCB station observation |
+| GET | `/api/v1/air-quality/filters/verification` | Verified/unverified Chennai and Tamil Nadu filter probes |
+| GET | `/api/v1/stations?city=` | Live CPCB station search with labelled fallback |
+| GET | `/api/v1/locations/search?name=` | Same-origin geocoding proxy |
 | GET | `/api/v1/stations/compare?ids=` | Multi-station comparison |
 | POST | `/api/v1/recommendations/plan` | Personalized daily plan |
 | POST | `/api/v1/recommendations/indoor` | Indoor air guidance + CADR |
@@ -230,11 +248,34 @@ Key endpoints:
 
 ## Known Limitations
 
-1. **CPCB API Rate Limits** — data.gov.in demo keys are rate-limited (HTTP 429). The service automatically cascades to OpenAQ → Open-Meteo.
-2. **Open-Meteo CAMS Grid Resolution** — CAMS provides ~11km grid estimates, not point-source station readings. It is clearly labelled as a tertiary fallback.
-3. **Historical Trends** — 24-hour trend data is available from Open-Meteo CAMS; CPCB historical API requires paid access.
-4. **Station Coverage** — 10 major Indian cities are pre-registered. Additional CPCB stations can be added in `backend/app/services/air_quality_service.py`.
-5. **Offline LLM** — When no Groq/Gemini API key is configured, the deterministic fallback engine provides complete recommendations without LLM. This is by design.
+1. **CPCB provider reachability** — live data.gov.in probes from the development machine timed out or returned 502. Real requests succeed only when the provider is reachable; the app then falls back to OpenAQ → Open-Meteo.
+2. **CPCB AQI** — the dataset's averaging period is not verified here, so CPCB-backed responses show pollutant concentrations with AQI unavailable instead of inventing an official index.
+3. **Filter verification** — Chennai/Tamil Nadu filters are probed at runtime and documented as verified only after a successful response.
+4. **Open-Meteo CAMS Grid Resolution** — CAMS provides ~11km grid estimates, not point-source station readings. It is clearly labelled as a tertiary fallback.
+5. **Historical Trends** — 24-hour trend data is available from Open-Meteo CAMS; CPCB historical API requires paid access.
+6. **Station Coverage** — unfiltered CPCB pagination is bounded. A labelled static registry is used only when live station metadata is unavailable.
+7. **Offline LLM** — When no Groq/Gemini API key is configured, the deterministic fallback engine provides complete recommendations without LLM. This is by design.
+8. **Distributed rate limiting** — the in-memory default is per-process. An opt-in Redis store (`RATE_LIMIT_STORE=redis`) shares counters across instances and fails open on store errors; no live Redis instance was tested here. See [`docs/RATE_LIMITING.md`](docs/RATE_LIMITING.md).
+
+---
+
+## Verification evidence
+
+Everything below was measured locally; none of it implies a live provider success or a deployment.
+
+| Artifact | What it shows |
+|---|---|
+| [`docs/PHASE_2_CPCB_REPORT.md`](docs/PHASE_2_CPCB_REPORT.md) | Phase 1 precision fixes and CPCB adapter implementation |
+| [`docs/MILESTONE_3_REPORT.md`](docs/MILESTONE_3_REPORT.md) | Audits, shared rate limiting, live-test attempt, publication |
+| [`docs/CPCB_INTEGRATION.md`](docs/CPCB_INTEGRATION.md) | Schema, config, filter-verification status (unverified) and probe evidence |
+| [`docs/artifacts/README.md`](docs/artifacts/README.md) | Index of raw audit output, coverage, performance and demo files |
+| [`docs/artifacts/axe-results.json`](docs/artifacts/axe-results.json) | axe: HomePage 21 rules / 0 violations, profile dialog 20 rules / 0 violations |
+| [`docs/artifacts/lighthouse.json`](docs/artifacts/lighthouse.json) | Local dev-server Lighthouse: performance 74, accessibility 100, best practices 96, SEO 100 |
+| [`docs/artifacts/npm-audit.json`](docs/artifacts/npm-audit.json) | 8 unresolved dev-tooling vulnerabilities (4 moderate, 2 high, 2 critical) |
+| [`docs/artifacts/pip-audit.txt`](docs/artifacts/pip-audit.txt) | `No known vulnerabilities found` for backend requirements |
+| [`docs/artifacts/performance.json`](docs/artifacts/performance.json) | 140 serial in-process ASGI requests: p50 0.668 ms, p95 1.038 ms |
+| [`docs/artifacts/breathewise-demo.mp4`](docs/artifacts/breathewise-demo.mp4) | 37.2 s real screen capture of the local verification instance |
+| [`docs/LINKEDIN_PROCESS.md`](docs/LINKEDIN_PROCESS.md) | Process write-up based only on measured work |
 
 ---
 
@@ -256,3 +297,4 @@ BreatheWise follows a strict **three-stage grounded AI architecture**:
 - Respond to prompt injection attempts
 
 If the LLM produces malformed output, schema validation rejects it and the deterministic fallback engine responds instantly.
+

@@ -8,7 +8,9 @@ from app.main import app
 async def test_compare_stations_insufficient_ids():
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         # Only 1 station provided
-        resp = await client.get("/api/v1/stations/compare", params={"station_ids": "cpcb_delhi_ito"})
+        resp = await client.get(
+            "/api/v1/stations/compare", params={"station_ids": "cpcb_delhi_ito"}
+        )
         assert resp.status_code == 400
         assert "At least 2 station IDs" in resp.json()["message"]
 

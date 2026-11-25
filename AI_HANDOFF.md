@@ -263,3 +263,4 @@ To add a new LLM provider (e.g. Mistral, OpenAI, Anthropic):
 | Testing | ✅ | 65 backend tests, 88% coverage, 33 frontend tests, adversarial cases |
 | Accessibility | ✅ | ARIA roles, sr-only labels, keyboard nav, non-color AQI badges, focus rings |
 | Problem Alignment | ✅ | All 10 problem statement requirements implemented |
+

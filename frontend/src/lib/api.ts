@@ -10,7 +10,41 @@ import {
   SustainableAlternative,
 } from "@/types/recommendations";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
+// Empty default keeps production requests on the deployment origin, where
+// /api/v1 is proxied to the backend. A separate host is opt-in via env var.
+const API_BASE_URL = (process.env.NEXT_PUBLIC_API_BASE_URL ?? "").replace(/\/$/, "");
+
+function apiUrl(path: string): string {
+  const origin = typeof window === "undefined" ? "http://localhost" : window.location.origin;
+  return new URL(`${API_BASE_URL}${path}`, origin).toString();
+}
+
+export interface GeocodedLocation {
+  id: number;
+  name: string;
+  latitude: number;
+  longitude: number;
+  admin1?: string;
+  country?: string;
+}
+
+export async function searchLocations(query: string): Promise<GeocodedLocation[]> {
+  const trimmed = query.trim();
+  if (trimmed.length < 2) return [];
+  // Keep third-party geocoding behind our own origin so CSP policies do not
+  // need to allow an external host and the browser never sees provider URLs.
+  const url = new URL(apiUrl("/api/v1/locations/search"));
+  url.searchParams.set("name", trimmed);
+
+  const response = await fetch(url.toString(), { headers: { Accept: "application/json" } });
+  if (!response.ok) {
+    throw new ApiError("Location search is temporarily unavailable.", response.status);
+  }
+  const data = (await response.json()) as { results?: GeocodedLocation[] };
+  return (data.results ?? []).filter(
+    (item) => Number.isFinite(item.latitude) && Number.isFinite(item.longitude)
+  );
+}
 
 export class ApiError extends Error {
   status: number;
@@ -26,7 +60,7 @@ export async function fetchAirQuality(
   lon: number,
   bypassCache: boolean = false
 ): Promise<AirQualityApiResponse> {
-  const url = new URL(`${API_BASE_URL}/api/v1/air-quality`);
+  const url = new URL(apiUrl("/api/v1/air-quality"));
   url.searchParams.append("lat", lat.toString());
   url.searchParams.append("lon", lon.toString());
   if (bypassCache) {
@@ -46,10 +80,18 @@ export async function fetchAirQuality(
   return response.json();
 }
 
-export async function fetchStations(query?: string): Promise<StationsApiResponse> {
-  const url = new URL(`${API_BASE_URL}/api/v1/stations`);
+export async function fetchStations(
+  query?: string,
+  lat?: number,
+  lon?: number
+): Promise<StationsApiResponse> {
+  const url = new URL(apiUrl("/api/v1/stations"));
   if (query) {
     url.searchParams.append("query", query);
+  }
+  if (lat !== undefined && lon !== undefined) {
+    url.searchParams.append("lat", lat.toString());
+    url.searchParams.append("lon", lon.toString());
   }
 
   const response = await fetch(url.toString(), {
@@ -58,14 +100,15 @@ export async function fetchStations(query?: string): Promise<StationsApiResponse
   });
 
   if (!response.ok) {
-    throw new ApiError("Failed to fetch monitoring stations.", response.status);
+    const errorBody = await response.json().catch(() => ({}));
+    throw new ApiError(errorBody.message || "Failed to fetch monitoring stations.", response.status);
   }
 
   return response.json();
 }
 
 export async function fetchStationComparison(stationIds: string[]): Promise<ComparisonApiResponse> {
-  const url = new URL(`${API_BASE_URL}/api/v1/stations/compare`);
+  const url = new URL(apiUrl("/api/v1/stations/compare"));
   url.searchParams.append("station_ids", stationIds.join(","));
 
   const response = await fetch(url.toString(), {
@@ -86,7 +129,7 @@ export async function fetchPersonalizedPlan(
   lon: number,
   profile: HouseholdProfile
 ): Promise<PersonalizedPlan> {
-  const response = await fetch(`${API_BASE_URL}/api/v1/recommendations/plan`, {
+  const response = await fetch(apiUrl("/api/v1/recommendations/plan"), {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -107,7 +150,7 @@ export async function fetchIndoorGuidance(
   areaSqft: number = 600,
   aqi?: number
 ): Promise<IndoorGuidance> {
-  const url = new URL(`${API_BASE_URL}/api/v1/recommendations/indoor`);
+  const url = new URL(apiUrl("/api/v1/recommendations/indoor"));
   url.searchParams.append("area_sqft", areaSqft.toString());
   if (aqi !== undefined) {
     url.searchParams.append("aqi", aqi.toString());
@@ -128,7 +171,7 @@ export async function fetchIndoorGuidance(
 export async function fetchSustainableAlternatives(
   aqi?: number
 ): Promise<SustainableAlternative[]> {
-  const url = new URL(`${API_BASE_URL}/api/v1/recommendations/sustainable-alternatives`);
+  const url = new URL(apiUrl("/api/v1/recommendations/sustainable-alternatives"));
   if (aqi !== undefined) {
     url.searchParams.append("aqi", aqi.toString());
   }

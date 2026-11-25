@@ -18,11 +18,13 @@ import { Table, Eye, BarChart2 } from "lucide-react";
 interface HistoricalTrendChartProps {
   data: HourlyTrendPoint[];
   stationName: string;
+  sourceLabel?: string;
 }
 
 export const HistoricalTrendChart: React.FC<HistoricalTrendChartProps> = ({
   data,
   stationName,
+  sourceLabel = "modelled provider data",
 }) => {
   const [metric, setMetric] = useState<"aqi" | "pm2_5" | "pm10">("aqi");
   const [showTableView, setShowTableView] = useState(false);
@@ -50,10 +52,11 @@ export const HistoricalTrendChart: React.FC<HistoricalTrendChartProps> = ({
     return {
       time: `${hours}:${minutes}`,
       fullTime: date.toLocaleString("en-IN", { timeZone: "Asia/Kolkata" }),
-      aqi: d.aqi ?? 0,
-      pm2_5: d.pm2_5 ?? 0,
-      pm10: d.pm10 ?? 0,
-      category: d.category || "Unknown",
+      // Never turn a missing value into zero: "no data" is not a measurement.
+      aqi: d.aqi ?? null,
+      pm2_5: d.pm2_5 ?? null,
+      pm10: d.pm10 ?? null,
+      category: d.category || "Not computed",
     };
   });
 
@@ -74,7 +77,8 @@ export const HistoricalTrendChart: React.FC<HistoricalTrendChartProps> = ({
             24-Hour Observation Trend — {stationName}
           </CardTitle>
           <p className="text-xs text-slate-500 dark:text-slate-400">
-            Real hourly observations recorded by monitoring sensors.
+            Hourly values from {sourceLabel}; AQI uses CPCB breakpoints only where all required
+            inputs are present. Missing values are shown as —, never zero.
           </p>
         </div>
 
@@ -82,6 +86,7 @@ export const HistoricalTrendChart: React.FC<HistoricalTrendChartProps> = ({
           {/* Metric Selector Buttons */}
           <div className="inline-flex rounded-lg border border-slate-200 p-0.5 bg-slate-50 dark:border-slate-800 dark:bg-slate-900" role="group" aria-label="Select Metric">
             <button
+              type="button"
               onClick={() => setMetric("aqi")}
               className={`rounded-md px-2.5 py-1 text-xs font-medium transition-all ${
                 metric === "aqi"
@@ -93,6 +98,7 @@ export const HistoricalTrendChart: React.FC<HistoricalTrendChartProps> = ({
               AQI
             </button>
             <button
+              type="button"
               onClick={() => setMetric("pm2_5")}
               className={`rounded-md px-2.5 py-1 text-xs font-medium transition-all ${
                 metric === "pm2_5"
@@ -104,6 +110,7 @@ export const HistoricalTrendChart: React.FC<HistoricalTrendChartProps> = ({
               PM2.5
             </button>
             <button
+              type="button"
               onClick={() => setMetric("pm10")}
               className={`rounded-md px-2.5 py-1 text-xs font-medium transition-all ${
                 metric === "pm10"
@@ -123,6 +130,7 @@ export const HistoricalTrendChart: React.FC<HistoricalTrendChartProps> = ({
             onClick={() => setShowTableView(!showTableView)}
             className="flex items-center gap-1.5 text-xs"
             aria-label={showTableView ? "Show visual chart view" : "Show accessible data table view"}
+            aria-pressed={showTableView}
           >
             {showTableView ? (
               <>
@@ -157,9 +165,9 @@ export const HistoricalTrendChart: React.FC<HistoricalTrendChartProps> = ({
                 {chartData.map((row, idx) => (
                   <tr key={idx} className="hover:bg-slate-50 dark:hover:bg-slate-900/50">
                     <td className="px-3 py-2 font-medium text-slate-900 dark:text-slate-100">{row.fullTime}</td>
-                    <td className="px-3 py-2 font-bold text-emerald-700 dark:text-emerald-400">{row.aqi}</td>
-                    <td className="px-3 py-2">{row.pm2_5}</td>
-                    <td className="px-3 py-2">{row.pm10}</td>
+                    <td className="px-3 py-2 font-bold text-emerald-700 dark:text-emerald-400">{row.aqi ?? "—"}</td>
+                    <td className="px-3 py-2">{row.pm2_5 ?? "—"}</td>
+                    <td className="px-3 py-2">{row.pm10 ?? "—"}</td>
                     <td className="px-3 py-2">{row.category}</td>
                   </tr>
                 ))}

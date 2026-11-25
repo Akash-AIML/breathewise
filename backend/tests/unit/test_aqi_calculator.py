@@ -29,6 +29,14 @@ def test_sub_index_linear_interpolation():
     assert si_co == 137
 
 
+def test_sub_index_band_gaps_are_not_silently_dropped():
+    # Published integer bands leave gaps (e.g. 50.5 between 50 and 51).
+    # Such values must fall into the next higher tier, never disappear.
+    assert calculate_sub_index(PollutantType.PM10, 50.5) == 51
+    assert calculate_sub_index(PollutantType.PM2_5, 30.5) == 51
+    assert calculate_sub_index(PollutantType.CO, 1.05) == 51
+
+
 def test_aqi_categories_mapping():
     assert get_aqi_category(40) == AQICategory.GOOD
     assert get_aqi_category(50) == AQICategory.GOOD

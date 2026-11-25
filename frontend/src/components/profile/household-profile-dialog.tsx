@@ -19,10 +19,56 @@ export const HouseholdProfileDialog: React.FC<HouseholdProfileDialogProps> = ({
   onSave,
 }) => {
   const [formData, setFormData] = React.useState<HouseholdProfile>(profile);
+  const panelRef = React.useRef<HTMLDivElement>(null);
+  const previouslyFocusedRef = React.useRef<HTMLElement | null>(null);
+  const onCloseRef = React.useRef(onClose);
 
   React.useEffect(() => {
     setFormData(profile);
   }, [profile]);
+
+  React.useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
+
+  React.useEffect(() => {
+    if (!isOpen) return;
+
+    previouslyFocusedRef.current = document.activeElement as HTMLElement | null;
+    const panel = panelRef.current;
+    const focusableSelector =
+      'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+    const getFocusable = () =>
+      panel ? Array.from(panel.querySelectorAll<HTMLElement>(focusableSelector)) : [];
+
+    getFocusable()[0]?.focus();
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        onCloseRef.current();
+        return;
+      }
+      if (event.key !== "Tab") return;
+      const focusable = getFocusable();
+      if (focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown);
+      previouslyFocusedRef.current?.focus();
+    };
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
@@ -38,8 +84,12 @@ export const HouseholdProfileDialog: React.FC<HouseholdProfileDialogProps> = ({
       role="dialog"
       aria-modal="true"
       aria-labelledby="profile-dialog-title"
+      aria-describedby="profile-dialog-description"
     >
-      <div className="relative w-full max-w-xl rounded-2xl bg-white p-6 shadow-2xl dark:bg-slate-900 border border-slate-200 dark:border-slate-800 my-8">
+      <div
+        ref={panelRef}
+        className="relative w-full max-w-xl rounded-2xl bg-white p-6 shadow-2xl dark:bg-slate-900 border border-slate-200 dark:border-slate-800 my-8"
+      >
         {/* Header */}
         <div className="flex items-center justify-between border-b border-slate-100 pb-4 dark:border-slate-800">
           <div className="flex items-center gap-2.5">
@@ -50,7 +100,7 @@ export const HouseholdProfileDialog: React.FC<HouseholdProfileDialogProps> = ({
               <h2 id="profile-dialog-title" className="text-base font-bold text-slate-900 dark:text-slate-100">
                 Household Profile & Vulnerabilities
               </h2>
-              <p className="text-xs text-slate-500">
+              <p id="profile-dialog-description" className="text-xs text-slate-500">
                 Tailors health precautions to your family's exact members. All fields optional.
               </p>
             </div>
@@ -127,10 +177,14 @@ export const HouseholdProfileDialog: React.FC<HouseholdProfileDialogProps> = ({
             </h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
               <div>
-                <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                <label
+                  htmlFor="commute-method"
+                  className="block font-semibold text-slate-700 dark:text-slate-300 mb-1"
+                >
                   Primary Commute Method:
                 </label>
                 <select
+                  id="commute-method"
                   value={formData.commute_method}
                   onChange={(e) =>
                     setFormData({ ...formData, commute_method: e.target.value as any })
@@ -147,10 +201,14 @@ export const HouseholdProfileDialog: React.FC<HouseholdProfileDialogProps> = ({
               </div>
 
               <div>
-                <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                <label
+                  htmlFor="exercise-routine"
+                  className="block font-semibold text-slate-700 dark:text-slate-300 mb-1"
+                >
                   Outdoor Exercise Habit:
                 </label>
                 <select
+                  id="exercise-routine"
                   value={formData.exercise_routine}
                   onChange={(e) =>
                     setFormData({ ...formData, exercise_routine: e.target.value as any })
@@ -184,10 +242,14 @@ export const HouseholdProfileDialog: React.FC<HouseholdProfileDialogProps> = ({
               </label>
 
               <div>
-                <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                <label
+                  htmlFor="home-area-sqft"
+                  className="block font-semibold text-slate-700 dark:text-slate-300 mb-1"
+                >
                   Home Carpet Area (sq.ft.):
                 </label>
                 <input
+                  id="home-area-sqft"
                   type="number"
                   min={100}
                   max={5000}

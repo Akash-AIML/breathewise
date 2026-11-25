@@ -1,0 +1,12 @@
+$ command -v google-chrome chromium chromium-browser
+google-chrome: NOT FOUND
+chromium: /usr/bin/chromium
+chromium-browser: NOT FOUND
+$ chromium --version
+Chromium 155.0.8059.84 Arch Linux
+$ command -v lighthouse
+NOT FOUND
+$ npm ls lighthouse --depth=0 (frontend)
+breathewise-frontend@0.1.0 /home/akash/Projects/AirQuality/frontend
+└── (empty)
+

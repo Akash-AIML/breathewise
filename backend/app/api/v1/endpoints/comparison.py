@@ -49,6 +49,8 @@ async def compare_stations(
                 latitude=station_meta.latitude, longitude=station_meta.longitude
             )
             if obs:
+                # Never mutate the observation cached by the shared service.
+                obs = obs.model_copy(deep=True)
                 # Override station name with registered physical station name
                 obs.station.station_id = station_meta.station_id
                 obs.station.station_name = station_meta.station_name

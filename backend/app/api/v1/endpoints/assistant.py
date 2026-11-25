@@ -9,9 +9,10 @@ POST /api/v1/assistant/chat
 
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 
 from app.schemas.assistant import ChatQueryRequest, ExplanationResponse
+from app.schemas.profile import HouseholdProfile
 from app.services.air_quality_service import AirQualityService
 from app.services.llm_assistant_service import LLMAssistantService
 
@@ -47,6 +48,7 @@ def get_llm_service() -> LLMAssistantService:
 async def chat(
     request_body: ChatQueryRequest,
     _request: Request,
+    response: Response,
     aq_service: AirQualityService = Depends(get_air_quality_service),
     llm_service: LLMAssistantService = Depends(get_llm_service),
 ) -> ExplanationResponse:
@@ -58,9 +60,9 @@ async def chat(
     4. Falls back to deterministic engine if LLM is unavailable.
     """
     try:
-        observation = await aq_service.get_air_quality(
-            lat=request_body.lat,
-            lon=request_body.lon,
+        observation = await aq_service.get_air_quality_for_coordinates(
+            latitude=request_body.lat,
+            longitude=request_body.lon,
         )
     except Exception as exc:
         logger.error("Air quality fetch failed during assistant query: %s", exc)
@@ -72,14 +74,22 @@ async def chat(
             ),
         ) from exc
 
-    profile = (
-        request_body.profile
-        or __import__("app.schemas.profile", fromlist=["HouseholdProfile"]).HouseholdProfile()
-    )
+    if observation is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=(
+                "Real-time air quality data is currently unavailable. "
+                "BreatheWise cannot provide grounded recommendations without validated telemetry."
+            ),
+        )
 
-    response = await llm_service.generate_explanation(
+    profile = request_body.profile or HouseholdProfile()
+
+    explanation = await llm_service.generate_explanation(
         query=request_body.query,
         observation=observation,
         profile=profile,
     )
-    return response
+    # Explanations may reflect sensitive household profile details.
+    response.headers["Cache-Control"] = "no-store"
+    return explanation

@@ -4,6 +4,7 @@ import { useState, useRef, useEffect, KeyboardEvent } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { HouseholdProfile } from "@/types/recommendations";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -17,13 +18,6 @@ interface AssistantMessage {
   rationale?: string;
   llmGrounded?: boolean;
   timestamp: Date;
-}
-
-interface HouseholdProfile {
-  has_children?: boolean;
-  has_elderly?: boolean;
-  has_respiratory_sensitivity?: boolean;
-  has_cardiac_condition?: boolean;
 }
 
 interface ChatAssistantProps {
@@ -53,14 +47,14 @@ async function sendAssistantQuery(
   lon: number,
   profile?: HouseholdProfile
 ) {
-  const res = await fetch("/api/assistant/chat", {
+  const res = await fetch("/api/v1/assistant/chat", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ query, lat, lon, profile: profile ?? {} }),
   });
   if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error((err as { detail?: string }).detail ?? `HTTP ${res.status}`);
+    const err = (await res.json().catch(() => ({}))) as { message?: string; detail?: string };
+    throw new Error(err.message ?? err.detail ?? `HTTP ${res.status}`);
   }
   return res.json();
 }

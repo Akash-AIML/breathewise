@@ -1,7 +1,7 @@
 import logging
 from typing import List, Optional
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, HTTPException, Query, Response, status
 from pydantic import BaseModel, Field
 
 from app.core.policy_engine import (
@@ -27,12 +27,13 @@ class PlanRequest(BaseModel):
     lat: float = Field(..., ge=-90.0, le=90.0, description="Latitude in decimal degrees")
     lon: float = Field(..., ge=-180.0, le=180.0, description="Longitude in decimal degrees")
     profile: Optional[HouseholdProfile] = Field(
-        default_factory=HouseholdProfile, description="Optional household demographic and preference profile"
+        default_factory=HouseholdProfile,
+        description="Optional household demographic and preference profile",
     )
 
 
 @router.post("/recommendations/plan", response_model=PersonalizedPlan)
-async def generate_plan(request: PlanRequest) -> PersonalizedPlan:
+async def generate_plan(request: PlanRequest, response: Response) -> PersonalizedPlan:
     """
     STAGES 1 & 2: Multi-Stage Deterministic Recommendation Pipeline
     1. Fetches authentic validated observation for user coordinates.
@@ -50,6 +51,8 @@ async def generate_plan(request: PlanRequest) -> PersonalizedPlan:
 
     assessment = assess_environmental_risk(obs)
     plan = generate_personalized_plan(assessment, request.profile or HouseholdProfile())
+    # Household health profile is sensitive input; never cache the derived plan.
+    response.headers["Cache-Control"] = "no-store"
     return plan
 
 
