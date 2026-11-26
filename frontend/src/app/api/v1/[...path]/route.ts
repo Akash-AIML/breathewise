@@ -7,9 +7,15 @@ import {
   safeProxyError,
 } from "@/lib/backend-binding";
 
+// Local type instead of Next's generated RouteContext global: CI runs tsc
+// before `next build`, so generated route types may not exist yet.
+interface ProxyContext {
+  params: Promise<{ path: string[] }>;
+}
+
 async function proxyToBackend(
   request: NextRequest,
-  context: RouteContext<"/api/v1/[...path]">
+  context: ProxyContext
 ): Promise<NextResponse> {
   const { path } = await context.params;
   if (!isAllowedApiPath(path)) {

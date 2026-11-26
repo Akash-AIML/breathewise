@@ -96,7 +96,7 @@ Local `next dev` without Vercel still needs `BACKEND_URL=http://127.0.0.1:8000`,
 | Check | Actual result |
 |---|---|
 | Root `vercel.json` against the published `https://openapi.vercel.sh/vercel.json` schema | valid with Draft 7 validation |
-| `npm run type-check` | clean |
+| `npm run type-check` with `.next` removed | clean; no dependency on generated `RouteContext` types |
 | `npm run test:ci` | **75 passed / 18 files**, including service config, binding, timeout, proxy, fresh-geolocation, and existing axe tests |
 | `npm run build` | Next.js 16.4.6 build passed; `/api/v1/[...path]` and `/health` are dynamic route handlers |
 | `npm audit --audit-level=moderate` | 0 vulnerabilities |
