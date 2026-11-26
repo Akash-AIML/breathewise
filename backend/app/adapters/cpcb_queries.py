@@ -1,5 +1,5 @@
 import logging
-from typing import Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
 
 from app.adapters.cpcb_transport import CPCBProviderError, redact_secrets
 from app.core.config import settings
@@ -10,6 +10,17 @@ logger = logging.getLogger(__name__)
 
 class CPCBQueriesMixin:
     """Station discovery, filter verification, and station queries for CPCBAdapter."""
+
+    if TYPE_CHECKING:
+        async def _fetch_pages(
+            self,
+            filters: Optional[Dict[str, str]] = None,
+            max_pages: Optional[int] = None,
+            page_size: Optional[int] = None,
+        ) -> Tuple[List[Dict[str, Any]], Optional[int]]: ...
+
+        def parse_records(self, records: List[Dict[str, Any]]) -> List[CPCBStationObservation]: ...
+        async def _load_with_fallback(self, key: str, loader: Any) -> Any: ...
 
     async def _sample_observations(self) -> List[CPCBStationObservation]:
         async def load() -> List[CPCBStationObservation]:

@@ -28,3 +28,9 @@ target-version = "py312"
 select = ["E", "F", "I", "W"]
 ignore = ["E501"]
 
+[tool.mypy]
+python_version = "3.12"
+plugins = ["pydantic.mypy"]
+ignore_missing_imports = true
+
+

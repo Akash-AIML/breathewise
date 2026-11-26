@@ -1,5 +1,7 @@
+import { createRequire } from "module";
 import { describe, expect, it } from "vitest";
 
+const require = createRequire(import.meta.url);
 const vercelConfig = require("../../../vercel.json");
 
 describe("root Vercel services configuration", () => {

@@ -1,8 +1,14 @@
+"use client";
+
 import React from "react";
 import Link from "next/link";
 import { Wind, MessageSquare } from "lucide-react";
 
 export const Navbar = () => {
+  const handleOpenAssistant = () => {
+    window.dispatchEvent(new CustomEvent("breathewise:open-assistant"));
+  };
+
   return (
     <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/90 backdrop-blur-md dark:border-slate-800 dark:bg-slate-900/90">
       <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
@@ -25,16 +31,16 @@ export const Navbar = () => {
         </Link>
 
         <nav className="hidden md:flex items-center gap-6 text-sm font-medium text-slate-600 dark:text-slate-300" aria-label="Main Navigation">
-          <Link
-            href="#assistant"
-            className="flex items-center gap-1.5 rounded-md bg-emerald-50 px-3 py-1.5 text-emerald-800 font-semibold hover:bg-emerald-100 transition-colors dark:bg-emerald-950 dark:text-emerald-300"
+          <button
+            type="button"
+            onClick={handleOpenAssistant}
+            className="flex items-center gap-1.5 rounded-md bg-emerald-50 px-3 py-1.5 text-emerald-800 font-semibold hover:bg-emerald-100 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 dark:bg-emerald-950 dark:text-emerald-300"
           >
             <MessageSquare className="h-4 w-4" aria-hidden="true" />
             AI Assistant
-          </Link>
+          </button>
         </nav>
       </div>
     </header>
   );
 };
-

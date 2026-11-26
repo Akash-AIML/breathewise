@@ -8,6 +8,8 @@ Covers:
 Shared observation/profile/service fixtures live in ``tests/unit/conftest.py``.
 """
 
+from unittest.mock import patch
+
 import pytest
 
 from app.core.policy_engine import assess_environmental_risk, generate_personalized_plan
@@ -137,3 +139,30 @@ class TestChatQueryRequestSchema:
     def test_profile_defaults_to_none(self):
         req = ChatQueryRequest(query="Is it safe?", lat=28.6, lon=77.2)
         assert req.profile is None or isinstance(req.profile, HouseholdProfile)
+
+
+class TestDirectImpactAndWinterSmogFallback:
+    @pytest.mark.asyncio
+    async def test_direct_impact_query(self, service: LLMAssistantService, severe_observation, default_profile):
+        """Direct choice impact query returns CO2 and HEPA exposure savings."""
+        with patch.object(service, "groq_api_key", None), patch.object(service, "gemini_api_key", None):
+            resp = await service.generate_explanation(
+                "What is the direct impact of switching my commute?",
+                severe_observation,
+                default_profile,
+            )
+        assert "co₂" in resp.answer.lower() or "co2" in resp.answer.lower()
+        assert "hepa" in resp.answer.lower()
+        assert resp.llm_grounded is False
+
+    @pytest.mark.asyncio
+    async def test_winter_smog_query(self, service: LLMAssistantService, severe_observation, default_profile):
+        """Severe winter smog query explains thermal inversion windows."""
+        with patch.object(service, "groq_api_key", None), patch.object(service, "gemini_api_key", None):
+            resp = await service.generate_explanation(
+                "How do we navigate severe winter smog and inversion?",
+                severe_observation,
+                default_profile,
+            )
+        assert "inversion" in resp.answer.lower()
+        assert resp.llm_grounded is False

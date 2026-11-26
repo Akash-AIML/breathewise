@@ -67,7 +67,11 @@ export function ChatAssistant({
     setError(null);
 
     try {
-      const data = await sendAssistantQuery(trimmed, lat, lon, profile);
+      const history = messages
+        .filter((m) => m.id !== "welcome")
+        .slice(-4)
+        .map((m) => ({ role: m.role, content: m.content }));
+      const data = await sendAssistantQuery(trimmed, lat, lon, profile, history);
       const assistantMsg: AssistantMessage = {
         id: `assistant-${Date.now()}`,
         role: "assistant",

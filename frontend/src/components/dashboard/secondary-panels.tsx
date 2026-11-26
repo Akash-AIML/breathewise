@@ -5,9 +5,7 @@ import { StationComparisonView } from "@/components/dashboard/station-comparison
 import { ChatAssistant } from "@/components/assistant/chat-assistant";
 import { HouseholdProfile } from "@/types/recommendations";
 
-interface ComparisonPanelProps {}
-
-export const ComparisonPanel: React.FC<ComparisonPanelProps> = () => (
+export const ComparisonPanel: React.FC = () => (
   <section
     id="panel-comparison"
     role="tabpanel"

@@ -10,7 +10,9 @@ expect.extend(matchers);
 // exposes its matcher types from `vitest`, so declare the matcher there.
 declare module "vitest" {
   interface Matchers<
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     R extends void | Promise<void> = void | Promise<void>,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     T = unknown
   > {
     toHaveNoViolations(): void;

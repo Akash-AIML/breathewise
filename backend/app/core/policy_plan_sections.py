@@ -228,7 +228,7 @@ def _build_afternoon_recommendations(
             )
         )
 
-    if profile.occupation_type == "outdoor" and aqi > 200:
+    if profile.occupation_type == "outdoor" and aqi is not None and aqi > 200:
         afternoon_items.append(
             RecommendationItem(
                 id="rec_aft_outdoor_worker",

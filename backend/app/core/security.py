@@ -140,6 +140,7 @@ class RedisRateLimitStore(RateLimitStore):
     async def check(self, key: str, max_requests: int, window_seconds: int) -> tuple[bool, int]:
         if self._client is None:
             await self.setup()
+        assert self._client is not None
 
         window_ms = max(1, int(window_seconds * 1000))
         current, ttl_ms = await self._client.eval(

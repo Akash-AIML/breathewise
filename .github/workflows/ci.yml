@@ -28,12 +28,15 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -e .
-          pip install ruff pytest pytest-asyncio coverage
+          pip install ruff pytest pytest-asyncio coverage bandit
 
       - name: Lint with Ruff
         run: |
           ruff check .
           ruff format --check .
+
+      - name: Security Scan (Bandit)
+        run: bandit -r app/ -ll
 
       - name: Run Pytest with Coverage
         run: |
@@ -61,8 +64,10 @@ jobs:
       - name: Install Dependencies
         run: npm ci
 
-      - name: Type Check
-        run: npx tsc --noEmit
+      - name: Type Check & Lint
+        run: |
+          npx tsc --noEmit
+          npm run lint
 
       - name: Run Unit Tests
         run: npm run test:ci

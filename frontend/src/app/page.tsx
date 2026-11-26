@@ -84,8 +84,10 @@ export default function HomePage() {
         setError(res.message || "No data available for this location.");
         setObservation(null);
       }
-    } catch (err: any) {
-      setError(err.message || "Failed to communicate with air quality service.");
+    } catch (err: unknown) {
+      const message =
+        err instanceof Error ? err.message : "Failed to communicate with air quality service.";
+      setError(message);
       setObservation(null);
     } finally {
       setIsLoading(false);
@@ -97,7 +99,7 @@ export default function HomePage() {
     try {
       const planRes = await fetchPersonalizedPlan(lat, lon, prof);
       setPlan(planRes);
-    } catch (err) {
+    } catch {
       setPlan(null);
     } finally {
       setIsPlanLoading(false);
@@ -105,9 +107,20 @@ export default function HomePage() {
   };
 
   useEffect(() => {
-    loadData(selectedStation.lat, selectedStation.lon);
-    loadPlan(selectedStation.lat, selectedStation.lon, profile);
+    const timer = window.setTimeout(() => {
+      void loadData(selectedStation.lat, selectedStation.lon);
+      void loadPlan(selectedStation.lat, selectedStation.lon, profile);
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, [selectedStation, profile]);
+
+  useEffect(() => {
+    const onOpenAssistant = () => {
+      setActiveTab("assistant");
+    };
+    window.addEventListener("breathewise:open-assistant", onOpenAssistant);
+    return () => window.removeEventListener("breathewise:open-assistant", onOpenAssistant);
+  }, [setActiveTab]);
 
   useEffect(() => {
     let cancelled = false;
@@ -227,7 +240,12 @@ export default function HomePage() {
       )}
 
       {activeTab === "sustainability" && (
-        <SustainabilityPanel alternatives={plan?.sustainable_alternatives ?? []} />
+        <SustainabilityPanel
+          alternatives={plan?.sustainable_alternatives ?? []}
+          profile={profile}
+          currentAqi={observation?.calculated_aqi}
+          stationName={selectedStation.name}
+        />
       )}
 
       {activeTab === "trends" && (

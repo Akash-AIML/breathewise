@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { Home, Wind, AlertTriangle, ShieldCheck, Check, Sparkles } from "lucide-react";
+import { Wind, AlertTriangle, Check } from "lucide-react";
 import { IndoorGuidance } from "@/types/recommendations";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -13,6 +13,9 @@ interface IndoorAssistantProps {
 
 export const IndoorAssistant: React.FC<IndoorAssistantProps> = ({ guidance, onAreaChange }) => {
   const [areaInput, setAreaInput] = useState(600);
+  const [useHepa, setUseHepa] = useState(true);
+  const [useKitchenExhaust, setUseKitchenExhaust] = useState(true);
+  const [sealDrafts, setSealDrafts] = useState(false);
 
   if (!guidance) {
     return (
@@ -23,6 +26,11 @@ export const IndoorAssistant: React.FC<IndoorAssistantProps> = ({ guidance, onAr
       </Card>
     );
   }
+
+  // Deterministic multiplicative filtration model (HEPA ~65%, Draft sealing ~20%, Exhaust ~15% indoor source cut)
+  const remainingFraction =
+    (useHepa ? 0.35 : 1) * (sealDrafts ? 0.8 : 1) * (useKitchenExhaust ? 0.85 : 1);
+  const estimatedPm25ReductionPct = Math.round((1 - remainingFraction) * 100);
 
   const handleUpdateArea = (e: React.FormEvent) => {
     e.preventDefault();
@@ -92,6 +100,57 @@ export const IndoorAssistant: React.FC<IndoorAssistantProps> = ({ guidance, onAr
             <p className="text-amber-950 dark:text-amber-100 leading-relaxed">
               {guidance.houseplant_scientific_disclaimer}
             </p>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Interactive Indoor Hack Impact Estimator */}
+      <Card className="border-emerald-200 bg-emerald-50/40 dark:border-emerald-800 dark:bg-emerald-950/20">
+        <CardHeader>
+          <CardTitle className="text-sm font-bold text-slate-900 dark:text-slate-100">
+            Indoor Air Hack Impact Simulator
+          </CardTitle>
+          <p className="text-xs text-slate-600 dark:text-slate-400">
+            Toggle practical household interventions to see their combined effect on indoor fine particulate (PM2.5) levels.
+          </p>
+        </CardHeader>
+        <CardContent className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="flex flex-wrap gap-3 text-xs">
+            <label className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 dark:border-slate-700 dark:bg-slate-900 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={useHepa}
+                onChange={(e) => setUseHepa(e.target.checked)}
+                className="accent-emerald-700"
+              />
+              <span>True HEPA Purifier ({guidance.hepa_sizing_cadr_m3_hr} m³/hr)</span>
+            </label>
+            <label className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 dark:border-slate-700 dark:bg-slate-900 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={useKitchenExhaust}
+                onChange={(e) => setUseKitchenExhaust(e.target.checked)}
+                className="accent-emerald-700"
+              />
+              <span>Kitchen Chimney Exhaust</span>
+            </label>
+            <label className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 dark:border-slate-700 dark:bg-slate-900 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={sealDrafts}
+                onChange={(e) => setSealDrafts(e.target.checked)}
+                className="accent-emerald-700"
+              />
+              <span>Door/Window Draft Sealing</span>
+            </label>
+          </div>
+          <div className="shrink-0 rounded-xl border border-emerald-200 bg-white px-4 py-2.5 text-center dark:border-emerald-800 dark:bg-slate-900">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 block">
+              Est. Indoor PM2.5 Cut
+            </span>
+            <span className="text-2xl font-black text-emerald-700 dark:text-emerald-400">
+              {estimatedPm25ReductionPct}%
+            </span>
           </div>
         </CardContent>
       </Card>

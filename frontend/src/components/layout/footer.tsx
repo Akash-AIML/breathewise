@@ -1,5 +1,5 @@
 import React from "react";
-import { ShieldCheck, Database, Award } from "lucide-react";
+import { Database } from "lucide-react";
 
 export const Footer = () => {
   return (

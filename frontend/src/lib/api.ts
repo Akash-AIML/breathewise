@@ -259,3 +259,48 @@ export async function fetchSustainableAlternatives(
 
   return response.json();
 }
+
+export interface ChatTurnPayload {
+  role: "user" | "assistant";
+  content: string;
+}
+
+const ASSISTANT_TIMEOUT_MS = 25000;
+
+function safeAssistantMessage(status: number): string {
+  if (status === 429) return "Too many assistant requests. Please wait a moment and try again.";
+  if (status >= 500) return "The assistant is temporarily unavailable. Please try again.";
+  return "The assistant could not answer that request.";
+}
+
+export async function sendAssistantQuery(
+  query: string,
+  lat: number,
+  lon: number,
+  profile?: HouseholdProfile,
+  history: ChatTurnPayload[] = []
+) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), ASSISTANT_TIMEOUT_MS);
+  let res: Response;
+  try {
+    res = await fetch("/api/v1/assistant/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({
+        query,
+        lat,
+        lon,
+        profile: profile ?? {},
+        history: history.slice(-6).map((t) => ({ role: t.role, content: t.content.slice(0, 600) })),
+      }),
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timer);
+  }
+
+  // Do not surface untrusted upstream text in the assistant UI.
+  if (!res.ok) throw new Error(safeAssistantMessage(res.status));
+  return res.json();
+}

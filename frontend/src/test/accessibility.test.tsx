@@ -6,6 +6,8 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import HomePage from "@/app/page";
 import { HouseholdProfileDialog } from "@/components/profile/household-profile-dialog";
+import { SustainableAlternativesView } from "@/components/sustainability/sustainable-alternatives";
+import { ChatAssistant } from "@/components/assistant/chat-assistant";
 import { HouseholdProfile } from "@/types/recommendations";
 
 // jsdom does not implement real layout or colour computation, so axe cannot
@@ -84,6 +86,39 @@ describe("axe accessibility audit (jsdom)", () => {
 
     const results = await axe(container, jsdomAxeOptions);
     auditResults.HouseholdProfileDialog = {
+      passes: results.passes.length,
+      violations: results.violations.map((v) => ({
+        id: v.id,
+        impact: v.impact,
+        nodes: v.nodes.map((n) => n.target),
+      })),
+    };
+    expect(results).toHaveNoViolations();
+  });
+
+  it("SustainableAlternativesView and ChatAssistant have no axe violations", async () => {
+    const { container } = render(
+      <div>
+        <SustainableAlternativesView
+          alternatives={[
+            {
+              mode: "Electric Metro / Rail",
+              emission_factor_g_co2_per_km: 14,
+              estimated_emission_reduction_pct: 91,
+              personal_exposure_mitigation: "Filtered carriages cut PM2.5 by 50–70%.",
+              condition_dependent_note: null,
+            },
+          ]}
+          profile={profile}
+          currentAqi={280}
+          stationName="Delhi (ITO)"
+        />
+        <ChatAssistant lat={28.6289} lon={77.2407} currentAqi={280} profile={profile} />
+      </div>
+    );
+
+    const results = await axe(container, jsdomAxeOptions);
+    auditResults.SecondaryModules = {
       passes: results.passes.length,
       violations: results.violations.map((v) => ({
         id: v.id,

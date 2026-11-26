@@ -62,6 +62,7 @@ class LLMAssistantService:
         query: str,
         observation: NormalizedObservation,
         profile: HouseholdProfile,
+        history: Optional[list] = None,
     ) -> ExplanationResponse:
         """
         Generates grounded explanation for user query using Stage 1 assessment and Stage 2 policies.
@@ -88,7 +89,9 @@ class LLMAssistantService:
         plan = generate_personalized_plan(assessment, profile)
 
         # Step 3: Attempt Server-Side LLM with Structured JSON
-        llm_response = await self._call_server_llm(query, observation, assessment, plan, profile)
+        llm_response = await self._call_server_llm(
+            query, observation, assessment, plan, profile, history=history
+        )
         if llm_response:
             return llm_response
 
@@ -102,6 +105,7 @@ class LLMAssistantService:
         assessment: EnvironmentalAssessment,
         plan: PersonalizedPlan,
         profile: HouseholdProfile,
+        history: Optional[list] = None,
     ) -> Optional[ExplanationResponse]:
         """
         Attempts structured JSON completion via Groq or Gemini server-side APIs.
@@ -138,6 +142,15 @@ class LLMAssistantService:
                 ]
             )
         )
+
+        if history:
+            safe_turns = [
+                f"- {t.role.upper()}: {t.content}"
+                for t in history[-4:]
+                if not self.screen_for_prompt_injection(t.content)
+            ]
+            if safe_turns:
+                system_prompt += "\n\nRECENT CONVERSATION CONTEXT:\n" + "\n".join(safe_turns)
 
         approved_actions = self._approved_actions(plan)
         try:

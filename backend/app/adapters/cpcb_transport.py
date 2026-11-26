@@ -2,7 +2,7 @@ import asyncio
 import logging
 import re
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
 
 import httpx
 
@@ -48,6 +48,20 @@ def redact_secrets(value: object) -> str:
 
 class CPCBTransportMixin:
     """HTTP requests, caching, and circuit-breaker helpers for CPCBAdapter."""
+
+    api_key: Optional[str]
+    BASE_URL: str
+    RESOURCE_ID: str
+    _cache: Dict[str, Tuple[datetime, Any]]
+    _last_valid: Dict[str, Tuple[datetime, List[CPCBStationObservation]]]
+    _locks: Dict[str, asyncio.Lock]
+    _circuit_open_until: Optional[datetime]
+
+    if TYPE_CHECKING:
+        @staticmethod
+        def _with_current_freshness(
+            observation: CPCBStationObservation,
+        ) -> CPCBStationObservation: ...
 
     # ── HTTP client ──────────────────────────────────────────────────────────
 

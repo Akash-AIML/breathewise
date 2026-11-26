@@ -116,7 +116,7 @@ class AirQualityService:
     caching, provenance tracking, and multi-provider failover.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.cpcb_adapter = CPCBAdapter(station_registry=INDIAN_CITIES_REGISTRY)
         self.openaq_adapter = OpenAQAdapter()
         self.openmeteo_adapter = OpenMeteoAdapter()

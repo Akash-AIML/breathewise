@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-11-25T09:54:08.489Z",
+  "generatedAt": "2026-11-26T09:51:35.106Z",
   "results": {
     "HomePage": {
       "passes": 21,
@@ -7,6 +7,10 @@
     },
     "HouseholdProfileDialog": {
       "passes": 20,
+      "violations": []
+    },
+    "SecondaryModules": {
+      "passes": 27,
       "violations": []
     }
   }

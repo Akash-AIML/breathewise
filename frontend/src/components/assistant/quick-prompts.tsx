@@ -4,6 +4,8 @@
 
 export const QUICK_PROMPTS = [
   { label: "🏃 Can I exercise outside?", query: "Is it safe to go jogging or exercise outdoors today?" },
+  { label: "📊 Direct impact of my choices", query: "What is the direct impact of switching my commute or using a HEPA purifier today?" },
+  { label: "🌫️ Severe winter smog tips", query: "How should my family navigate severe winter smog and thermal inversion hours today?" },
   { label: "👶 Kids safe outdoors?", query: "Is it safe for my children to play outside or go to school?" },
   { label: "🌿 Do plants help?", query: "Can houseplants improve my indoor air quality?" },
   { label: "🚇 Best commute option?", query: "What is the safest way to commute today?" },

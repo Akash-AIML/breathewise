@@ -1,5 +1,7 @@
+import { createRequire } from "module";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+const require = createRequire(import.meta.url);
 const nextConfig = require("../../next.config.js");
 
 describe("frontend security configuration", () => {

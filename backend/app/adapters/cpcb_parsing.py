@@ -214,7 +214,8 @@ class CPCBParsingMixin:
                 source_pollutant_id=stats.pollutant_id,
             )
 
-        calc_result = compute_official_cpcb_aqi(readings) if readings else None
+        aqi_inputs = {r.pollutant: r for r in readings.values()}
+        calc_result = compute_official_cpcb_aqi(aqi_inputs) if aqi_inputs else None
         aqi_allowed = settings.CPCB_AVERAGING_PERIOD_VERIFIED
         notes_parts = list(observation.warnings)
         notes_parts.append(f"Source observation: {observation.last_update.isoformat()}")

@@ -1,10 +1,15 @@
-from typing import List, Optional
+from typing import List, Literal, Optional
 
 from pydantic import BaseModel, Field
 
 from app.schemas.observation import PollutantType
 from app.schemas.profile import HouseholdProfile
 from app.schemas.recommendation import RiskClassification
+
+
+class ChatTurn(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str = Field(..., min_length=1, max_length=600)
 
 
 class ChatQueryRequest(BaseModel):
@@ -19,6 +24,11 @@ class ChatQueryRequest(BaseModel):
     profile: Optional[HouseholdProfile] = Field(
         default_factory=HouseholdProfile,
         description="Household vulnerability and lifestyle profile",
+    )
+    history: List[ChatTurn] = Field(
+        default_factory=list,
+        max_length=6,
+        description="Optional recent conversation turns for multi-turn context",
     )
 
 

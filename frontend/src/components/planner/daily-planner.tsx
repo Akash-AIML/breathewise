@@ -1,9 +1,9 @@
 "use client";
 
 import React, { useState } from "react";
-import { Sunrise, Sun, Sunset, AlertCircle, ChevronDown, ChevronUp, ShieldCheck } from "lucide-react";
+import { Sunrise, Sun, Sunset, ChevronDown, ChevronUp, ShieldCheck } from "lucide-react";
 import { PersonalizedPlan, RecommendationItem } from "@/types/recommendations";
-import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 
 interface DailyPlannerProps {
@@ -109,6 +109,29 @@ export const DailyPlanner: React.FC<DailyPlannerProps> = ({ plan, isLoading }) =
             <p className="text-xs text-emerald-950 dark:text-emerald-100">
               {plan.environmental_assessment.assessment_summary}
             </p>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Severe Winter Smog & Thermal Inversion Windows */}
+      <Card className="border-amber-200 bg-amber-50/40 dark:border-amber-900/60 dark:bg-amber-950/20">
+        <CardContent className="p-4 space-y-2">
+          <h3 className="text-xs font-bold uppercase tracking-wider text-amber-900 dark:text-amber-300">
+            Winter Smog &amp; Thermal Inversion Windows
+          </h3>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-[11px] text-slate-700 dark:text-slate-300">
+            <div className="rounded-lg bg-white/80 dark:bg-slate-900/60 p-2.5 border border-amber-100 dark:border-amber-900/40">
+              <strong className="text-amber-800 dark:text-amber-300 block">6:00 – 9:30 AM • Inversion Trap</strong>
+              Cold surface air traps PM2.5 &amp; vehicle soot near ground level. Avoid outdoor runs and keep windows sealed.
+            </div>
+            <div className="rounded-lg bg-white/80 dark:bg-slate-900/60 p-2.5 border border-sky-100 dark:border-sky-900/40">
+              <strong className="text-sky-800 dark:text-sky-300 block">1:00 – 4:00 PM • Dispersion Peak</strong>
+              Solar warming lifts the boundary layer. Best window for brief ventilation (if AQI &lt; 200) and essential errands.
+            </div>
+            <div className="rounded-lg bg-white/80 dark:bg-slate-900/60 p-2.5 border border-indigo-100 dark:border-indigo-900/40">
+              <strong className="text-indigo-800 dark:text-indigo-300 block">6:30 – 10:30 PM • Evening Re-Trap</strong>
+              Evening traffic emissions + cooling air re-concentrate smog. Switch to HEPA purification &amp; kitchen exhaust.
+            </div>
           </div>
         </CardContent>
       </Card>

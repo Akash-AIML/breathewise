@@ -72,7 +72,7 @@ async def fetch_geocoding(name: str) -> List[Dict[str, Any]]:
             and isinstance(item.get("longitude"), (int, float))
         ):
             continue
-        entry = {}
+        entry: Dict[str, Any] = {}
         for field in allowed:
             value = item.get(field)
             if isinstance(value, str):
@@ -108,7 +108,8 @@ def _reverse_cache_key(lat: float, lon: float) -> Tuple[float, float]:
 def _parse_reverse_payload(payload: Any) -> Optional[Dict[str, Any]]:
     if not isinstance(payload, dict):
         return None
-    address = payload.get("address") if isinstance(payload.get("address"), dict) else {}
+    raw_address = payload.get("address")
+    address: Dict[str, Any] = raw_address if isinstance(raw_address, dict) else {}
     name = (
         address.get("town")
         or address.get("village")

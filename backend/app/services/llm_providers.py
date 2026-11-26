@@ -131,11 +131,11 @@ async def call_gemini(
         # Thinking models (Gemma 4, Gemini 3) put reasoning in parts flagged
         # `thought: true`. Only the final non-thought text part is an answer.
         texts = [
-            part.get("text")
+            text
             for part in parts
             if isinstance(part, dict)
             and not part.get("thought")
-            and isinstance(part.get("text"), str)
+            and isinstance((text := part.get("text")), str)
         ]
         if not texts:
             return None

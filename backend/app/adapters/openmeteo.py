@@ -42,7 +42,7 @@ class OpenMeteoAdapter(AirQualityAdapter):
     async def fetch_by_coordinates(
         self, latitude: float, longitude: float
     ) -> Optional[NormalizedObservation]:
-        params = {
+        params: dict[str, str | int | float] = {
             "latitude": round(latitude, 4),
             "longitude": round(longitude, 4),
             "current": "pm10,pm2_5,carbon_monoxide,nitrogen_dioxide,sulphur_dioxide,ozone",

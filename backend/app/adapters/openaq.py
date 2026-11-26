@@ -57,7 +57,7 @@ class OpenAQAdapter(AirQualityAdapter):
 
         headers = {"X-API-Key": self.api_key, "Accept": "application/json"}
         # Find nearest location within 50km (50,000m)
-        params = {
+        params: dict[str, str | int | float] = {
             "coordinates": f"{latitude},{longitude}",
             "radius": 50000,
             "limit": 1,

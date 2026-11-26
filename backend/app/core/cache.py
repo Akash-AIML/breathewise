@@ -10,7 +10,7 @@ from typing import Any, Callable, MutableMapping
 
 
 def prune_expired(
-    mapping: MutableMapping[str, Any],
+    mapping: MutableMapping[Any, Any],
     expires_at: Callable[[Any], datetime],
     now: datetime | None = None,
 ) -> None:
@@ -21,13 +21,13 @@ def prune_expired(
             mapping.pop(key, None)
 
 
-def enforce_limit(mapping: MutableMapping[str, Any], max_entries: int) -> None:
+def enforce_limit(mapping: MutableMapping[Any, Any], max_entries: int) -> None:
     """Evict the oldest inserted keys until the mapping is within its cap."""
     while len(mapping) > max(0, max_entries):
         mapping.pop(next(iter(mapping)))
 
 
-def bound_locks(locks: MutableMapping[str, Any], max_locks: int) -> None:
+def bound_locks(locks: MutableMapping[Any, Any], max_locks: int) -> None:
     """Remove idle per-key locks; never evict one that is in use."""
     for key in list(locks):
         if len(locks) <= max(0, max_locks):

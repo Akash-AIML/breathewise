@@ -8,7 +8,7 @@ import { DailyPlanner } from "@/components/planner/daily-planner";
 import { IndoorAssistant } from "@/components/indoor/indoor-assistant";
 import { SustainableAlternativesView } from "@/components/sustainability/sustainable-alternatives";
 import { NormalizedObservation } from "@/types/observation";
-import { IndoorGuidance, PersonalizedPlan } from "@/types/recommendations";
+import { IndoorGuidance, PersonalizedPlan, HouseholdProfile } from "@/types/recommendations";
 
 interface PlannerPanelProps {
   plan: PersonalizedPlan | null;
@@ -71,10 +71,16 @@ export const IndoorPanel: React.FC<IndoorPanelProps> = ({
 
 interface SustainabilityPanelProps {
   alternatives: PersonalizedPlan["sustainable_alternatives"];
+  profile?: HouseholdProfile;
+  currentAqi?: number | null;
+  stationName?: string;
 }
 
 export const SustainabilityPanel: React.FC<SustainabilityPanelProps> = ({
   alternatives,
+  profile,
+  currentAqi,
+  stationName,
 }) => (
   <section
     id="panel-sustainability"
@@ -86,7 +92,12 @@ export const SustainabilityPanel: React.FC<SustainabilityPanelProps> = ({
     <h2 id="sustainability-heading" className="text-xl font-bold text-slate-900 dark:text-slate-100">
       Sustainable Mobility &amp; Emission Impact
     </h2>
-    <SustainableAlternativesView alternatives={alternatives} />
+    <SustainableAlternativesView
+      alternatives={alternatives}
+      profile={profile}
+      currentAqi={currentAqi}
+      stationName={stationName}
+    />
   </section>
 );
 

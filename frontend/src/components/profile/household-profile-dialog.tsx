@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { Users, X, Heart, Shield, Home, Briefcase, Activity } from "lucide-react";
+import { Users, X, Heart, Home, Briefcase } from "lucide-react";
 import { HouseholdProfile } from "@/types/recommendations";
 import { Button } from "@/components/ui/button";
 
@@ -22,10 +22,6 @@ export const HouseholdProfileDialog: React.FC<HouseholdProfileDialogProps> = ({
   const panelRef = React.useRef<HTMLDivElement>(null);
   const previouslyFocusedRef = React.useRef<HTMLElement | null>(null);
   const onCloseRef = React.useRef(onClose);
-
-  React.useEffect(() => {
-    setFormData(profile);
-  }, [profile]);
 
   React.useEffect(() => {
     onCloseRef.current = onClose;
@@ -101,7 +97,7 @@ export const HouseholdProfileDialog: React.FC<HouseholdProfileDialogProps> = ({
                 Household Profile & Vulnerabilities
               </h2>
               <p id="profile-dialog-description" className="text-xs text-slate-500">
-                Tailors health precautions to your family's exact members. All fields optional.
+                Tailors health precautions to your family&apos;s exact members. All fields optional.
               </p>
             </div>
           </div>
@@ -187,7 +183,10 @@ export const HouseholdProfileDialog: React.FC<HouseholdProfileDialogProps> = ({
                   id="commute-method"
                   value={formData.commute_method}
                   onChange={(e) =>
-                    setFormData({ ...formData, commute_method: e.target.value as any })
+                    setFormData({
+                      ...formData,
+                      commute_method: e.target.value as HouseholdProfile["commute_method"],
+                    })
                   }
                   className="w-full rounded-lg border border-slate-300 bg-white p-2 text-xs text-slate-800 focus:ring-2 focus:ring-emerald-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
                 >
@@ -211,7 +210,10 @@ export const HouseholdProfileDialog: React.FC<HouseholdProfileDialogProps> = ({
                   id="exercise-routine"
                   value={formData.exercise_routine}
                   onChange={(e) =>
-                    setFormData({ ...formData, exercise_routine: e.target.value as any })
+                    setFormData({
+                      ...formData,
+                      exercise_routine: e.target.value as HouseholdProfile["exercise_routine"],
+                    })
                   }
                   className="w-full rounded-lg border border-slate-300 bg-white p-2 text-xs text-slate-800 focus:ring-2 focus:ring-emerald-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
                 >

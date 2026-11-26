@@ -89,6 +89,7 @@ async def chat(
         query=request_body.query,
         observation=observation,
         profile=profile,
+        history=request_body.history,
     )
     # Explanations may reflect sensitive household profile details.
     response.headers["Cache-Control"] = "no-store"
