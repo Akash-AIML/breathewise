@@ -12,6 +12,7 @@ class CPCBQueriesMixin:
     """Station discovery, filter verification, and station queries for CPCBAdapter."""
 
     if TYPE_CHECKING:
+
         async def _fetch_pages(
             self,
             filters: Optional[Dict[str, str]] = None,

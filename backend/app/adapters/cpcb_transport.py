@@ -58,6 +58,7 @@ class CPCBTransportMixin:
     _circuit_open_until: Optional[datetime]
 
     if TYPE_CHECKING:
+
         @staticmethod
         def _with_current_freshness(
             observation: CPCBStationObservation,

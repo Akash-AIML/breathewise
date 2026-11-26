@@ -143,9 +143,14 @@ class TestChatQueryRequestSchema:
 
 class TestDirectImpactAndWinterSmogFallback:
     @pytest.mark.asyncio
-    async def test_direct_impact_query(self, service: LLMAssistantService, severe_observation, default_profile):
+    async def test_direct_impact_query(
+        self, service: LLMAssistantService, severe_observation, default_profile
+    ):
         """Direct choice impact query returns CO2 and HEPA exposure savings."""
-        with patch.object(service, "groq_api_key", None), patch.object(service, "gemini_api_key", None):
+        with (
+            patch.object(service, "groq_api_key", None),
+            patch.object(service, "gemini_api_key", None),
+        ):
             resp = await service.generate_explanation(
                 "What is the direct impact of switching my commute?",
                 severe_observation,
@@ -156,9 +161,14 @@ class TestDirectImpactAndWinterSmogFallback:
         assert resp.llm_grounded is False
 
     @pytest.mark.asyncio
-    async def test_winter_smog_query(self, service: LLMAssistantService, severe_observation, default_profile):
+    async def test_winter_smog_query(
+        self, service: LLMAssistantService, severe_observation, default_profile
+    ):
         """Severe winter smog query explains thermal inversion windows."""
-        with patch.object(service, "groq_api_key", None), patch.object(service, "gemini_api_key", None):
+        with (
+            patch.object(service, "groq_api_key", None),
+            patch.object(service, "gemini_api_key", None),
+        ):
             resp = await service.generate_explanation(
                 "How do we navigate severe winter smog and inversion?",
                 severe_observation,
