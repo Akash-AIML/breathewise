@@ -56,7 +56,14 @@ export function useLocationState(): LocationState {
       (pos) => {
         const userLat = pos.coords.latitude;
         const userLon = pos.coords.longitude;
-        const prefix = `Using exact device coordinates (${userLat.toFixed(4)}, ${userLon.toFixed(4)}).`;
+        if (!Number.isFinite(userLat) || !Number.isFinite(userLon)) {
+          setGeoStatus("The device returned invalid coordinates. Search for your city or choose a station below.");
+          return;
+        }
+        const accuracy = Number.isFinite(pos.coords.accuracy)
+          ? ` Device-reported accuracy: ±${Math.round(pos.coords.accuracy)} m.`
+          : "";
+        const prefix = `Using exact device coordinates (${userLat.toFixed(4)}, ${userLon.toFixed(4)}).${accuracy}`;
         // Do not block the data fetch on naming: exact coordinates are authoritative.
         setGeoStatus(`${prefix} Resolving place name...`);
         setLocationLabel("Exact device coordinates");
@@ -95,7 +102,7 @@ export function useLocationState(): LocationState {
         if (requestId !== locationRequestRef.current) return;
         setGeoStatus("Location access denied or timed out. Search for your city or choose a station below.");
       },
-      { timeout: 10000, enableHighAccuracy: true }
+      { timeout: 10000, enableHighAccuracy: true, maximumAge: 0 }
     );
   };
 

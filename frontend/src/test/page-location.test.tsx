@@ -2,12 +2,12 @@ import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import HomePage from "@/app/page";
 
-function setGeolocation(latitude: number, longitude: number) {
+function setGeolocation(latitude: number, longitude: number, accuracy?: number) {
   Object.defineProperty(navigator, "geolocation", {
     configurable: true,
     value: {
       getCurrentPosition: vi.fn((success: PositionCallback) => {
-        success({ coords: { latitude, longitude } } as GeolocationPosition);
+        success({ coords: { latitude, longitude, accuracy } } as GeolocationPosition);
       }),
     },
   });
@@ -46,6 +46,32 @@ describe("HomePage location handling", () => {
     });
     expect(screen.queryByText(/Nearest Station/i)).not.toBeInTheDocument();
     expect(screen.getByText(/My Exact Location/i)).toBeInTheDocument();
+    expect(
+      (navigator.geolocation.getCurrentPosition as ReturnType<typeof vi.fn>).mock.calls[0][2]
+    ).toEqual(
+      expect.objectContaining({ enableHighAccuracy: true, maximumAge: 0, timeout: 10000 })
+    );
+  });
+
+  it("shows the browser-reported accuracy alongside device coordinates", async () => {
+    setGeolocation(28.6289, 77.2407, 35);
+    render(<HomePage />);
+    fireEvent.click(screen.getByRole("button", { name: /Use My Location/i }));
+
+    expect(
+      await screen.findByText(/device-reported accuracy: ±35 m/i)
+    ).toBeInTheDocument();
+  });
+
+  it("rejects invalid device coordinates instead of selecting them", async () => {
+    setGeolocation(Number.NaN, Number.NaN);
+    render(<HomePage />);
+    fireEvent.click(screen.getByRole("button", { name: /Use My Location/i }));
+
+    expect(
+      await screen.findByText(/device returned invalid coordinates/i)
+    ).toBeInTheDocument();
+    expect(screen.getAllByText(/Delhi \(ITO\)/i).length).toBeGreaterThan(0);
   });
 
   it("shows the reverse-geocoded tier-2 locality, not a distant popular city", async () => {
