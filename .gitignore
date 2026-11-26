@@ -15,4 +15,5 @@ id_rsa*
 htmlcov/
 dist/
 .next/
+next-env.d.ts
 
