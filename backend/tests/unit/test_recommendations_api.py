@@ -1,11 +1,21 @@
 import pytest
 from httpx import ASGITransport, AsyncClient
 
+from app.api.v1.endpoints import recommendations
 from app.main import app
 
 
 @pytest.mark.asyncio
-async def test_generate_plan_endpoint():
+async def test_generate_plan_endpoint(monkeypatch, clean_observation):
+    async def fake_observation(latitude: float, longitude: float):
+        return clean_observation
+
+    # Keep this unit test hermetic: never call live CPCB/Open-Meteo providers.
+    monkeypatch.setattr(
+        recommendations.air_quality_service,
+        "get_air_quality_for_coordinates",
+        fake_observation,
+    )
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         payload = {
             "lat": 28.6139,
