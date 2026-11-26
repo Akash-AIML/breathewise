@@ -31,10 +31,40 @@ describe("frontend security configuration", () => {
     expect(JSON.stringify(nextConfig)).not.toContain("BACKEND_URL");
   });
 
-  it("ignores a remote public API base URL in production", async () => {
+  const origin = window.location.origin;
+  const baseUrlCases = [
+    { label: "absolute same-origin", value: origin, expectedPrefix: origin },
+    { label: "absolute remote", value: "https://attacker.example", expectedPrefix: origin },
+    { label: "protocol-relative remote", value: "//attacker.example", expectedPrefix: origin },
+    { label: "same-origin path prefix", value: "/proxy", expectedPrefix: `${origin}/proxy` },
+    { label: "empty base", value: "", expectedPrefix: origin },
+  ];
+
+  for (const { label, value, expectedPrefix } of baseUrlCases) {
+    it(`resolves a ${label} API base before sending air-quality requests`, async () => {
+      vi.resetModules();
+      vi.stubEnv("NEXT_PUBLIC_APP_ENV", "production");
+      vi.stubEnv("NEXT_PUBLIC_API_BASE_URL", value);
+      const fetchMock = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ success: true, data: null, message: "No live observation" }),
+      });
+      global.fetch = fetchMock as unknown as typeof fetch;
+
+      const { fetchAirQuality } = await import("@/lib/api");
+      await fetchAirQuality(19.076, 72.8777);
+
+      const url = String(fetchMock.mock.calls[0][0]);
+      expect(url.startsWith(expectedPrefix)).toBe(true);
+      expect(url).toContain("/api/v1/air-quality");
+      expect(url).not.toContain("attacker.example");
+    });
+  }
+
+  it("keeps a configured remote base outside production", async () => {
     vi.resetModules();
-    vi.stubEnv("NEXT_PUBLIC_APP_ENV", "production");
-    vi.stubEnv("NEXT_PUBLIC_API_BASE_URL", "https://attacker.example");
+    vi.stubEnv("NEXT_PUBLIC_APP_ENV", "development");
+    vi.stubEnv("NEXT_PUBLIC_API_BASE_URL", "https://api.example");
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({ success: true, data: null, message: "No live observation" }),
@@ -44,27 +74,7 @@ describe("frontend security configuration", () => {
     const { fetchAirQuality } = await import("@/lib/api");
     await fetchAirQuality(19.076, 72.8777);
 
-    const url = String(fetchMock.mock.calls[0][0]);
-    expect(url).toContain("/api/v1/air-quality");
-    expect(url).not.toContain("attacker.example");
-  });
-
-  it("ignores a protocol-relative API base URL in production", async () => {
-    vi.resetModules();
-    vi.stubEnv("NEXT_PUBLIC_APP_ENV", "production");
-    vi.stubEnv("NEXT_PUBLIC_API_BASE_URL", "//attacker.example");
-    const fetchMock = vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({ success: true, data: null, message: "No live observation" }),
-    });
-    global.fetch = fetchMock as unknown as typeof fetch;
-
-    const { fetchAirQuality } = await import("@/lib/api");
-    await fetchAirQuality(19.076, 72.8777);
-
-    const url = String(fetchMock.mock.calls[0][0]);
-    expect(url).toContain("/api/v1/air-quality");
-    expect(url).not.toContain("attacker.example");
+    expect(String(fetchMock.mock.calls[0][0])).toContain("https://api.example/api/v1/air-quality");
   });
 
   it("uses fixed assistant error text instead of upstream detail", async () => {

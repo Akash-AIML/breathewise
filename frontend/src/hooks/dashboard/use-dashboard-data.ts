@@ -30,6 +30,7 @@ export function useDashboardData({ selectedStation, profile }: DashboardDataInpu
   const [error, setError] = useState<string | null>(null);
   const observationRequestRef = useRef(0);
   const planRequestRef = useRef<{ id: number; key: string }>({ id: 0, key: "" });
+  const { lat, lon } = selectedStation;
 
   const loadData = useCallback(async (lat: number, lon: number, bypassCache = false) => {
     const requestId = ++observationRequestRef.current;
@@ -80,21 +81,25 @@ export function useDashboardData({ selectedStation, profile }: DashboardDataInpu
     }
   }, []);
 
+  // Observation data depends only on coordinates: renaming a station must not
+  // issue another provider request.
   useEffect(() => {
-    const timer = window.setTimeout(() => {
-      void loadData(selectedStation.lat, selectedStation.lon);
-      void loadPlan(selectedStation.lat, selectedStation.lon, profile);
-    }, 0);
+    const timer = window.setTimeout(() => void loadData(lat, lon), 0);
     return () => window.clearTimeout(timer);
-  }, [selectedStation, profile, loadData, loadPlan]);
+  }, [lat, lon, loadData]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => void loadPlan(lat, lon, profile), 0);
+    return () => window.clearTimeout(timer);
+  }, [lat, lon, profile, loadPlan]);
 
   const refreshObservation = useCallback(
-    () => void loadData(selectedStation.lat, selectedStation.lon, true),
-    [loadData, selectedStation]
+    () => void loadData(lat, lon, true),
+    [lat, lon, loadData]
   );
   const retryObservation = useCallback(
-    () => void loadData(selectedStation.lat, selectedStation.lon, false),
-    [loadData, selectedStation]
+    () => void loadData(lat, lon, false),
+    [lat, lon, loadData]
   );
 
   return {

@@ -5,6 +5,7 @@ import httpx
 import pytest
 
 from app.adapters.cpcb import CPCBRateLimitError
+from app.core.config import settings
 from app.schemas.observation import (
     DataQualityStatus,
     NormalizedObservation,
@@ -128,3 +129,28 @@ async def test_caching_deduplication(service, sample_observation):
     res2 = await service.get_air_quality_for_coordinates(28.6139, 77.2090)
     assert res2 is not None
     assert service.openmeteo_adapter.fetch_by_coordinates.call_count == 1  # Deduplicated!
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("payload", [[], None])
+async def test_malformed_openaq_json_fails_over_to_openmeteo(
+    service, sample_observation, monkeypatch, payload
+):
+    monkeypatch.setattr(settings, "OPENAQ_API_KEY", "mock_key")
+    service.cpcb_adapter.fetch_by_coordinates = AsyncMock(return_value=None)
+    service.openmeteo_adapter.fetch_by_coordinates = AsyncMock(return_value=sample_observation)
+
+    def handler(request):
+        return httpx.Response(200, json=payload)
+
+    monkeypatch.setattr(
+        httpx,
+        "AsyncClient",
+        lambda **kwargs: httpx.AsyncClient(
+            transport=httpx.MockTransport(handler), timeout=kwargs.get("timeout")
+        ),
+    )
+
+    result = await service.get_air_quality_for_coordinates(28.61, 77.21, bypass_cache=True)
+    assert result is sample_observation
+    assert service.openmeteo_adapter.fetch_by_coordinates.called

@@ -14,6 +14,16 @@ from app.services.air_quality_service import INDIAN_CITIES_REGISTRY
 _CPCB_TEST_TIMESTAMP = datetime.now(UTC).isoformat()
 
 
+class _StringCoordinate:
+    """Value accepted by validated parsing but not by direct float() grouping."""
+
+    def __init__(self, text: str) -> None:
+        self.text = text
+
+    def __str__(self) -> str:
+        return self.text
+
+
 def _cpcb_record(pollutant_id: str, avg: str, **overrides):
     record = {
         "country": "India",
@@ -95,6 +105,7 @@ async def test_openaq_adapter_co_unit_conversion():
     co_reading = obs.readings[PollutantType.CO.value]
     assert co_reading.value == 2.5
     assert co_reading.unit == "mg/m³"
+    assert co_reading.averaging_period_hours is None
 
 
 @pytest.mark.asyncio
@@ -226,6 +237,44 @@ def test_cpcb_observation_preserves_station_city_and_state():
     assert normalized.station.station_id == "cpcb_karnataka_bengaluru_indiranagar"
 
 
+def test_cpcb_grouping_uses_validated_coordinates():
+    adapter = CPCBAdapter(api_key="mock_test_key")
+    observations = adapter.parse_records(
+        [
+            _cpcb_record(
+                "pm2.5",
+                "45.0",
+                latitude=_StringCoordinate("28.6289"),
+                longitude=_StringCoordinate("77.2407"),
+            ),
+            _cpcb_record("pm10", "80.0", latitude=28.6289, longitude=77.2407),
+        ]
+    )
+    assert len(observations) == 1
+    assert observations[0].latitude == 28.6289
+    assert observations[0].longitude == 77.2407
+    assert set(observations[0].pollutants) == {
+        PollutantType.PM2_5.value,
+        PollutantType.PM10.value,
+    }
+
+
+def test_cpcb_identity_rejects_null_and_non_string_fields():
+    adapter = CPCBAdapter(api_key="mock_test_key")
+    observations = adapter.parse_records(
+        [
+            _cpcb_record("PM2.5", "45.0", station=None),
+            _cpcb_record("PM10", "80.0", city=1234),
+            _cpcb_record("NO2", "30.0", state=False),
+            _cpcb_record("so2", "20.0", station="  ITO  ", city=" Delhi ", state=" Delhi "),
+        ]
+    )
+    assert len(observations) == 1
+    obs = observations[0]
+    assert (obs.station, obs.city, obs.state) == ("ITO", "Delhi", "Delhi")
+    assert set(obs.pollutants) == {PollutantType.SO2.value}
+
+
 def test_cpcb_parse_records_skips_malformed_rows_but_rejects_non_list():
     adapter = CPCBAdapter(api_key="mock_test_key")
     observations = adapter.parse_records([_cpcb_record("PM2.5", "45.0"), None, "not-a-record"])
@@ -291,3 +340,46 @@ def test_openaq_reported_timestamp_supports_object_string_and_malformed_values()
     assert parser({"datetime": {"local": "2026-11-24T12:00:00Z"}}) is None
     assert parser({"datetime": {"utc": "not-a-date"}}) is None
     assert parser({"datetime": "not-a-date"}) is None
+
+
+def test_openaq_ppm_ozone_is_converted_and_unsupported_units_are_excluded():
+    adapter = OpenAQAdapter(api_key="mock_key")
+    location = {
+        "id": 5000,
+        "name": "Ozone Station",
+        "locality": "Delhi",
+        "coordinates": {"latitude": 28.63, "longitude": 77.22},
+    }
+    measurements = [
+        {
+            "parameter": "o3",
+            "value": 0.05,
+            "unit": "ppm",
+            "datetime": "2026-11-24T12:00:00Z",
+        },
+        {
+            "parameter": "no2",
+            "value": 40.0,
+            "unit": "ppb",
+            "datetime": "2026-11-24T12:00:00Z",
+        },
+        {
+            "parameter": "pm25",
+            "value": 50.0,
+            "unit": "µg/m³",
+            "datetime": "2026-11-24T12:00:00Z",
+        },
+        {
+            "parameter": "pm10",
+            "value": 100.0,
+            "unit": "µg/m³",
+            "datetime": "2026-11-24T12:00:00Z",
+        },
+    ]
+
+    obs = adapter._parse_openaq_data(location, measurements, 28.63, 77.22)
+    assert obs is not None
+    assert obs.readings[PollutantType.O3.value].value == 98.15
+    assert obs.readings[PollutantType.O3.value].unit == "µg/m³"
+    assert obs.readings[PollutantType.O3.value].averaging_period_hours is None
+    assert PollutantType.NO2.value not in obs.readings

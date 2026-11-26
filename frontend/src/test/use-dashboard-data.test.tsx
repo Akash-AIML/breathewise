@@ -144,4 +144,60 @@ describe("useDashboardData request generations", () => {
     expect(result.current.plan?.generated_at).toBe("fresh");
     expect(result.current.isPlanLoading).toBe(false);
   });
+
+  it("does not refetch when only station metadata changes", async () => {
+    fetchAirQualityMock.mockReturnValue(new Promise<AirQualityApiResponse>(() => {}));
+    fetchPersonalizedPlanMock.mockReturnValue(new Promise<PersonalizedPlan>(() => {}));
+
+    const { rerender } = renderHook(
+      ({ station, profile }: HookProps) => useDashboardData({ selectedStation: station, profile }),
+      { initialProps: { station: stationA, profile: baseProfile } }
+    );
+    await waitFor(() => expect(fetchAirQualityMock).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(fetchPersonalizedPlanMock).toHaveBeenCalledTimes(1));
+
+    rerender({ station: { ...stationA, name: "Renamed", station_id: "renamed" }, profile: baseProfile });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    });
+
+    expect(fetchAirQualityMock).toHaveBeenCalledTimes(1);
+    expect(fetchPersonalizedPlanMock).toHaveBeenCalledTimes(1);
+    expect(fetchAirQualityMock.mock.calls[0].slice(0, 2)).toEqual([stationA.lat, stationA.lon]);
+  });
+
+  it("refetches observation and plan when coordinates change", async () => {
+    fetchAirQualityMock.mockReturnValue(new Promise<AirQualityApiResponse>(() => {}));
+    fetchPersonalizedPlanMock.mockReturnValue(new Promise<PersonalizedPlan>(() => {}));
+
+    const { rerender } = renderHook(
+      ({ station, profile }: HookProps) => useDashboardData({ selectedStation: station, profile }),
+      { initialProps: { station: stationA, profile: baseProfile } }
+    );
+    await waitFor(() => expect(fetchAirQualityMock).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(fetchPersonalizedPlanMock).toHaveBeenCalledTimes(1));
+
+    rerender({ station: stationB, profile: baseProfile });
+
+    await waitFor(() => expect(fetchAirQualityMock).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(fetchPersonalizedPlanMock).toHaveBeenCalledTimes(2));
+    expect(fetchAirQualityMock.mock.calls[1].slice(0, 2)).toEqual([stationB.lat, stationB.lon]);
+  });
+
+  it("refetches only the plan when the profile changes", async () => {
+    fetchAirQualityMock.mockReturnValue(new Promise<AirQualityApiResponse>(() => {}));
+    fetchPersonalizedPlanMock.mockReturnValue(new Promise<PersonalizedPlan>(() => {}));
+
+    const { rerender } = renderHook(
+      ({ station, profile }: HookProps) => useDashboardData({ selectedStation: station, profile }),
+      { initialProps: { station: stationA, profile: baseProfile } }
+    );
+    await waitFor(() => expect(fetchAirQualityMock).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(fetchPersonalizedPlanMock).toHaveBeenCalledTimes(1));
+
+    rerender({ station: stationA, profile: { ...baseProfile, has_children: true } });
+
+    await waitFor(() => expect(fetchPersonalizedPlanMock).toHaveBeenCalledTimes(2));
+    expect(fetchAirQualityMock).toHaveBeenCalledTimes(1);
+  });
 });

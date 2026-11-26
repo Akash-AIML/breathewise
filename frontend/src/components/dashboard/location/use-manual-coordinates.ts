@@ -80,6 +80,9 @@ export function useManualCoordinates({
   );
 
   const clearSavedCoordinates = useCallback(() => {
+    // Invalidate in-flight geolocation/reverse-lookup/search work before the
+    // cleared state is published.
+    requestRef.current += 1;
     const removed = removeSavedCoordinates();
     setSavedCoordinates(null);
     setManualCoordinates("");
@@ -89,7 +92,7 @@ export function useManualCoordinates({
         : "Saved coordinates cleared for this session. They could not be removed from browser storage."
     );
     setLocationResults([]);
-  }, [setGeoStatus, setLocationResults, setSavedCoordinates]);
+  }, [requestRef, setGeoStatus, setLocationResults, setSavedCoordinates]);
 
   return { manualCoordinates, setManualCoordinates, handleManualCoordinates, clearSavedCoordinates };
 }

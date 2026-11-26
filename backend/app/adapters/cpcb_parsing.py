@@ -106,13 +106,19 @@ class CPCBParsingMixin:
         return f"cpcb_{_SLUG.sub('_', raw).strip('_')}"
 
     @staticmethod
-    def _grouping_key(record: dict[str, Any], timestamp: datetime) -> tuple[Any, ...]:
+    def _grouping_key(
+        identity: tuple[str, str, str], coordinates: tuple[float, float], timestamp: datetime
+    ) -> tuple[Any, ...]:
+        station, city, state = identity
+        latitude, longitude = coordinates
+        # Group on the already validated identity/coordinates, never reparse the
+        # original raw fields (which may be non-numeric strings or null).
         return (
-            str(record.get("station", "")).strip().lower(),
-            str(record.get("city", "")).strip().lower(),
-            str(record.get("state", "")).strip().lower(),
-            round(float(record.get("latitude", 0.0)), 4),
-            round(float(record.get("longitude", 0.0)), 4),
+            station.strip().lower(),
+            city.strip().lower(),
+            state.strip().lower(),
+            round(latitude, 4),
+            round(longitude, 4),
             timestamp.isoformat(),
         )
 
@@ -140,9 +146,17 @@ class CPCBParsingMixin:
 
     @staticmethod
     def _record_identity(record: dict[str, Any]) -> tuple[str, str, str] | None:
-        station = str(record.get("station", "")).strip()
-        city = str(record.get("city", "")).strip()
-        state = str(record.get("state", "")).strip()
+        raw_station = record.get("station")
+        raw_city = record.get("city")
+        raw_state = record.get("state")
+        if (
+            not isinstance(raw_station, str)
+            or not isinstance(raw_city, str)
+            or not isinstance(raw_state, str)
+        ):
+            logger.info("CPCBAdapter: dropped record with non-string station/city/state.")
+            return None
+        station, city, state = raw_station.strip(), raw_city.strip(), raw_state.strip()
         if not station or not city or not state:
             logger.info("CPCBAdapter: dropped record with missing station/city/state.")
             return None
@@ -238,7 +252,7 @@ class CPCBParsingMixin:
             if coordinates is None:
                 continue
 
-            key = self._grouping_key(record, timestamp)
+            key = self._grouping_key(identity, coordinates, timestamp)
             if key not in grouped:
                 grouped[key] = self._new_observation(
                     record, identity, timestamp, retrieval_time, coordinates

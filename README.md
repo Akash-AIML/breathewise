@@ -51,7 +51,7 @@ coverage run -m pytest tests/ && coverage report --fail-under=80
 
 # Frontend
 cd frontend
-npx tsc --noEmit && npm run lint && npm run test:ci
+npx tsc --noEmit && npm run lint && npm run test:coverage
 ```
 
 ## Documentation

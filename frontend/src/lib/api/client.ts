@@ -1,15 +1,25 @@
 import { z } from "zod";
 
 // Empty default keeps production requests on the deployment origin, where the
-// explicit rewrite allowlist proxies /api/v1 to the backend. A remote base URL
-// is ignored in production so a public NEXT_PUBLIC_* value cannot redirect
-// coordinates or household profiles to a third-party host. Only an empty value
-// or a single-leading-slash same-origin path is safe; "//host" is a
-// protocol-relative URL and must be rejected like an absolute URL.
+// request-time proxy allowlist forwards /api/v1 to the backend. A remote base
+// URL is ignored in production so a public NEXT_PUBLIC_* value cannot redirect
+// coordinates or household profiles to a third-party host.
+const deploymentOrigin =
+  typeof window === "undefined" ? "http://localhost" : window.location.origin;
 const configuredBaseUrl = (process.env.NEXT_PUBLIC_API_BASE_URL ?? "").replace(/\/$/, "");
 export const isProduction =
   process.env.NEXT_PUBLIC_APP_ENV === "production" || process.env.NODE_ENV === "production";
-const isSameOriginBaseUrl = (value: string) => value === "" || (value.startsWith("/") && !value.startsWith("//"));
+
+/** Resolve candidates against the deployment origin instead of trusting prefixes. */
+export function isSameOriginBaseUrl(value: string): boolean {
+  if (value === "") return true;
+  try {
+    return new URL(value, deploymentOrigin).origin === deploymentOrigin;
+  } catch {
+    return false;
+  }
+}
+
 const API_BASE_URL = isProduction && !isSameOriginBaseUrl(configuredBaseUrl) ? "" : configuredBaseUrl;
 
 export const REQUEST_TIMEOUT_MS = 15000;
@@ -25,8 +35,7 @@ export class ApiError extends Error {
 }
 
 export function apiUrl(path: string): string {
-  const origin = typeof window === "undefined" ? "http://localhost" : window.location.origin;
-  return new URL(`${API_BASE_URL}${path}`, origin).toString();
+  return new URL(`${API_BASE_URL}${path}`, deploymentOrigin).toString();
 }
 
 /**

@@ -6,6 +6,7 @@ import {
   type RefObject,
   type SetStateAction,
   useCallback,
+  useRef,
   useState,
 } from "react";
 import { MapStation } from "@/components/dashboard/station-map";
@@ -28,6 +29,9 @@ export function useLocationSearch({
   const [locationQuery, setLocationQuery] = useState("");
   const [locationResults, setLocationResultsState] = useState<GeocodedLocation[]>([]);
   const [isSearchingLocation, setIsSearchingLocation] = useState(false);
+  // Tracks this hook's own searches so a stale completion cannot clear the
+  // loading state of a newer search; the shared ref tracks selection changes.
+  const searchGenerationRef = useRef(0);
 
   const handleLocationSearch = useCallback(
     async (event: FormEvent<HTMLFormElement>) => {
@@ -37,9 +41,14 @@ export function useLocationSearch({
         setGeoStatus("Enter at least two characters to search for a place.");
         return;
       }
+      // A newer search, manual entry, geolocation fix or station selection
+      // invalidates this generation via the shared request counter.
+      const searchId = ++searchGenerationRef.current;
+      const requestId = ++requestRef.current;
       setIsSearchingLocation(true);
       try {
         const results = await searchLocations(query);
+        if (searchId !== searchGenerationRef.current || requestId !== requestRef.current) return;
         setLocationResultsState(results);
         setGeoStatus(
           results.length === 0
@@ -47,13 +56,14 @@ export function useLocationSearch({
             : `${results.length} exact coordinate match(es) found. Pick one below.`
         );
       } catch (err) {
+        if (searchId !== searchGenerationRef.current || requestId !== requestRef.current) return;
         setLocationResultsState([]);
         setGeoStatus(err instanceof Error ? err.message : "Location search failed.");
       } finally {
-        setIsSearchingLocation(false);
+        if (searchId === searchGenerationRef.current) setIsSearchingLocation(false);
       }
     },
-    [locationQuery, setGeoStatus]
+    [locationQuery, requestRef, setGeoStatus]
   );
 
   const selectGeocodedLocation = useCallback(

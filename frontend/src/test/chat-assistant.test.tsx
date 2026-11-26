@@ -141,7 +141,7 @@ describe("ChatAssistant", () => {
     fireEvent.click(chip);
     await waitFor(() =>
       expect(global.fetch).toHaveBeenCalledWith(
-        "/api/v1/assistant/chat",
+        expect.stringContaining("/api/v1/assistant/chat"),
         expect.objectContaining({ method: "POST" })
       )
     );

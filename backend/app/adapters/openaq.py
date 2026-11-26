@@ -30,11 +30,28 @@ OPENAQ_PARAM_MAP: dict[str, PollutantType] = {
 
 HTTP_OK = 200
 HTTP_UNAUTHORIZED = 401
-SHORT_AVERAGING_POLLUTANTS = frozenset({PollutantType.CO, PollutantType.O3})
+
+# CPCB breakpoints are defined against these concentration units.
+REQUIRED_UNITS: dict[PollutantType, str] = {
+    PollutantType.PM2_5: "µg/m³",
+    PollutantType.PM10: "µg/m³",
+    PollutantType.NO2: "µg/m³",
+    PollutantType.SO2: "µg/m³",
+    PollutantType.CO: "mg/m³",
+    PollutantType.O3: "µg/m³",
+    PollutantType.NH3: "µg/m³",
+    PollutantType.PB: "µg/m³",
+}
+
 # OpenAQ reports CO in mass or volume units; CPCB breakpoints require mg/m³.
 CO_UNIT_CONVERSIONS: dict[str, Callable[[float], float]] = {
     "µg/m³": lambda value: value / 1000.0,
     "ppm": lambda value: value * 1.145,
+}
+# Ozone ppm -> µg/m³ at 25 °C and 1 atm (48 g/mol / 24.45 L/mol).
+O3_PPM_TO_UG_M3 = 1963.0
+O3_UNIT_CONVERSIONS: dict[str, Callable[[float], float]] = {
+    "ppm": lambda value: value * O3_PPM_TO_UG_M3,
 }
 
 
@@ -66,7 +83,13 @@ class OpenAQAdapter(AirQualityAdapter):
         if response.status_code != HTTP_OK:
             logger.warning("OpenAQAdapter: HTTP %s from OpenAQ API", response.status_code)
             return None
-        results: list[dict[str, Any]] | None = response.json().get("results", [])
+        payload = response.json()
+        if not isinstance(payload, dict):
+            # ValueError is a known provider failure; failover must continue.
+            raise ValueError("OpenAQ locations response must be a JSON object.")
+        results: list[dict[str, Any]] = payload.get("results", [])
+        if not isinstance(results, list):
+            raise ValueError("OpenAQ locations response has no results list.")
         return results or None
 
     @classmethod
@@ -78,7 +101,12 @@ class OpenAQAdapter(AirQualityAdapter):
         )
         if response.status_code != HTTP_OK:
             return None
-        results: list[dict[str, Any]] = response.json().get("results", [])
+        payload = response.json()
+        if not isinstance(payload, dict):
+            raise ValueError("OpenAQ latest-results response must be a JSON object.")
+        results: list[dict[str, Any]] = payload.get("results", [])
+        if not isinstance(results, list):
+            raise ValueError("OpenAQ latest-results response has no results list.")
         return results
 
     async def fetch_by_coordinates(
@@ -152,12 +180,24 @@ class OpenAQAdapter(AirQualityAdapter):
             return []
 
     @staticmethod
-    def _normalized_value(pollutant: PollutantType, value: Any, unit: Any) -> tuple[float, str]:
+    def _normalized_value(
+        pollutant: PollutantType, value: Any, unit: Any
+    ) -> tuple[float, str] | None:
+        """Return a CPCB-compatible value/unit, or None for unverifiable units."""
+        required_unit = REQUIRED_UNITS[pollutant]
+        if unit == required_unit:
+            return float(value), required_unit
+
         if pollutant == PollutantType.CO:
-            converter = CO_UNIT_CONVERSIONS.get(unit)
-            if converter:
-                return converter(value), "mg/m³"
-        return value, unit
+            conversions = CO_UNIT_CONVERSIONS
+        elif pollutant == PollutantType.O3:
+            conversions = O3_UNIT_CONVERSIONS
+        else:
+            conversions = {}
+        converter = conversions.get(unit) if isinstance(unit, str) else None
+        if converter is None:
+            return None
+        return converter(float(value)), required_unit
 
     @staticmethod
     def _measurement_source(
@@ -204,12 +244,17 @@ class OpenAQAdapter(AirQualityAdapter):
         if value is None or value < 0.0:
             return None
 
-        value, unit = cls._normalized_value(pollutant, value, unit)
+        normalized = cls._normalized_value(pollutant, value, unit)
+        if normalized is None:
+            # Unknown/unconvertible units must not be compared to CPCI breakpoints.
+            return None
+        value, unit = normalized
         reading = NormalizedPollutantReading(
             pollutant=pollutant,
             value=round(value, 2),
             unit=unit,
-            averaging_period_hours=(8 if pollutant in SHORT_AVERAGING_POLLUTANTS else 24),
+            # Latest values carry no verified averaging window.
+            averaging_period_hours=None,
         )
         return pollutant, reading
 

@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { HouseholdProfile } from "@/types/recommendations";
-import { ASSISTANT_TIMEOUT_MS, fetchWithTimeout, parseApiResponse } from "./client";
+import { apiUrl, ASSISTANT_TIMEOUT_MS, fetchWithTimeout, parseApiResponse } from "./client";
 import { assistantResponseSchema } from "./schemas/assistant";
 
 export interface ChatTurnPayload {
@@ -22,7 +22,9 @@ export async function sendAssistantQuery(
   history: ChatTurnPayload[] = []
 ): Promise<z.output<typeof assistantResponseSchema>> {
   return fetchWithTimeout(
-    "/api/v1/assistant/chat",
+    // Only the frontend's prefixed /api/v1 proxy exists in deployments; use
+    // the same base-URL handling as every other endpoint.
+    apiUrl("/api/v1/assistant/chat"),
     {
       method: "POST",
       headers: { "Content-Type": "application/json", Accept: "application/json" },
