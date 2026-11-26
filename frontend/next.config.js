@@ -1,20 +1,10 @@
 /** @type {import('next').NextConfig} */
 
-// Only browser-facing API routes are proxied. New backend routes must be added
-// here deliberately instead of becoming reachable via a wildcard rewrite.
-const PROXIED_API_ROUTES = [
-  '/api/v1/air-quality',
-  '/api/v1/assistant/chat',
-  '/api/v1/locations/reverse',
-  '/api/v1/locations/search',
-  '/api/v1/recommendations/indoor',
-  '/api/v1/recommendations/plan',
-  '/api/v1/recommendations/sustainable-alternatives',
-  '/api/v1/stations',
-  '/api/v1/stations/comparison-presets',
-  '/api/v1/stations/compare',
-];
-
+// Public /api/v1 requests are handled by the Next.js route handlers in
+// src/app/api/v1/[...path]. Those handlers use the Vercel service binding at
+// request time. Do not add build-time rewrites to a backend hostname here:
+// bindings do not resolve during builds, and the top-level vercel.json owns
+// public routing in services mode.
 // Next injects inline bootstrap scripts, so script-src still needs
 // 'unsafe-inline'. The remaining directives block framing, plugins, external
 // script hosts and cross-origin form/connect targets.
@@ -48,19 +38,6 @@ const nextConfig = {
           { key: 'Cross-Origin-Resource-Policy', value: 'same-origin' },
           { key: 'X-Permitted-Cross-Domain-Policies', value: 'none' },
         ],
-      },
-    ];
-  },
-  async rewrites() {
-    const backendUrl = process.env.BACKEND_URL || 'http://localhost:8000';
-    return [
-      ...PROXIED_API_ROUTES.map((source) => ({
-        source,
-        destination: `${backendUrl}${source}`,
-      })),
-      {
-        source: '/health',
-        destination: `${backendUrl}/health`,
       },
     ];
   },

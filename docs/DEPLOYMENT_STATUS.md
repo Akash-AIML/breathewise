@@ -5,11 +5,12 @@ the absence of a deployment is explicit rather than implied.
 
 ## What exists
 
-- `backend/render.yaml` — Render web service blueprint (`breathewise-backend`, `ENVIRONMENT=production`,
-  `healthCheckPath: /health`, provider keys injected with `sync: false`).
-- `frontend/vercel.json` — Vercel Next.js config that rewrites `/api/:path*` to
-  `https://breathewise-backend.onrender.com/api/:path*`.
-- Both files are configuration templates only. Neither has been applied to a live platform here.
+- `vercel.json` at the repository root — Vercel Services config with an internal FastAPI
+  `backend` service, a public Next.js `frontend` service, and a `frontend` → `backend` service
+  binding injected as `BACKEND_URL`.
+- `backend/render.yaml` — alternative Render web service blueprint (`breathewise-backend`,
+  `ENVIRONMENT=production`, `healthCheckPath: /health`, provider keys injected with `sync: false`).
+- These are configuration templates only. Neither has been applied to a live platform here.
 
 ## Checks actually run
 

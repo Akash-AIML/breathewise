@@ -23,19 +23,10 @@ describe("frontend security configuration", () => {
     expect(values["Cross-Origin-Resource-Policy"]).toBe("same-origin");
   });
 
-  it("proxies only explicit browser-facing API routes", async () => {
-    vi.stubEnv("BACKEND_URL", "http://127.0.0.1:8000");
-    const rewrites = await nextConfig.rewrites();
-    const sources = rewrites.map((entry: { source: string }) => entry.source);
-
-    expect(sources).toContain("/api/v1/air-quality");
-    expect(sources).toContain("/api/v1/assistant/chat");
-    expect(sources).toContain("/api/v1/stations/comparison-presets");
-    expect(sources).toContain("/api/v1/stations/compare");
-    expect(sources).not.toContain("/api/:path*");
-    for (const source of sources.filter((item: string) => item.startsWith("/api/"))) {
-      expect(source.startsWith("/api/v1/")).toBe(true);
-    }
+  it("leaves runtime service routing to the request-time proxy handlers", () => {
+    expect(nextConfig.rewrites).toBeUndefined();
+    expect(JSON.stringify(nextConfig)).not.toContain("onrender.com");
+    expect(JSON.stringify(nextConfig)).not.toContain("BACKEND_URL");
   });
 
   it("ignores a remote public API base URL in production", async () => {

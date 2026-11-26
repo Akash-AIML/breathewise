@@ -1,0 +1,27 @@
+import { NextRequest, NextResponse } from "next/server";
+
+import {
+  ASSISTANT_PROXY_TIMEOUT_MS,
+  forwardToBackend,
+  isAllowedApiPath,
+  safeProxyError,
+} from "@/lib/backend-binding";
+
+async function proxyToBackend(
+  request: NextRequest,
+  context: RouteContext<"/api/v1/[...path]">
+): Promise<NextResponse> {
+  const { path } = await context.params;
+  if (!isAllowedApiPath(path)) {
+    return safeProxyError(404, "Not found.");
+  }
+
+  const isAssistant = path[0] === "assistant" && path[1] === "chat";
+  return forwardToBackend(
+    request,
+    ["api", "v1", ...path],
+    isAssistant ? ASSISTANT_PROXY_TIMEOUT_MS : 15000
+  );
+}
+
+export { proxyToBackend as GET, proxyToBackend as POST };

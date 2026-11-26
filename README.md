@@ -5,8 +5,8 @@
 > Public repository: https://github.com/Akash-AIML/breathewise — **not deployed**; see
 > [`docs/DEPLOYMENT_STATUS.md`](docs/DEPLOYMENT_STATUS.md).
 
-[![Backend Tests](https://img.shields.io/badge/Backend%20Tests-143%20passing-brightgreen)](backend/tests)
-[![Frontend Tests](https://img.shields.io/badge/Frontend%20Tests-54%20passing-brightgreen)](frontend/src/test)
+[![Backend Tests](https://img.shields.io/badge/Backend%20Tests-158%20passing-brightgreen)](backend/tests)
+[![Frontend Tests](https://img.shields.io/badge/Frontend%20Tests-73%20passing-brightgreen)](frontend/src/test)
 [![Coverage](https://img.shields.io/badge/Coverage-87%25-yellow)](docs/artifacts/coverage-html/index.html)
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-blue)](frontend)
 [![axe](https://img.shields.io/badge/axe-0%20violations-brightgreen)](docs/artifacts/axe-results.json)
@@ -51,13 +51,14 @@ BreatheWise helps Indian families navigate urban air pollution through:
 
 ```
 ┌────────────────────────────────────────────────────────────────────┐
-│                     Next.js Frontend (Vercel)                      │
+│              Vercel project · frontend service (public)            │
 │  Tabs: Dashboard | Planner | Indoor | Sustainability | Trends |    │
 │         Comparison | Map | AI Assistant                            │
+│  /api/v1/* and /health → request-time route handlers                │
 └───────────────────────────────┬────────────────────────────────────┘
-                                │ HTTPS (rewrites via vercel.json)
+                                │ service binding BACKEND_URL (internal, runtime)
 ┌───────────────────────────────▼────────────────────────────────────┐
-│                   FastAPI Backend (Render.com)                      │
+│                Vercel project · backend service (FastAPI)           │
 │                                                                    │
 │  ┌─────────────────────────────────────────────────────────────┐   │
 │  │  Stage 1: Data Layer (Adapters)                             │   │
@@ -78,8 +79,9 @@ BreatheWise helps Indian families navigate urban air pollution through:
 
 **Core Principle:** The LLM is restricted to narrating approved, deterministic outputs. It never calculates risk or invents measurements.
 
-> The platform names in this diagram are **configuration targets**, not live deployments. No Render
-> or Vercel deployment was performed here; see [`docs/DEPLOYMENT_STATUS.md`](docs/DEPLOYMENT_STATUS.md).
+> This Vercel Services topology is a **configuration target**, not a live deployment. The root
+> `vercel.json` defines both services, and `backend/render.yaml` remains an alternative Render
+> blueprint. Neither was deployed here; see [`docs/DEPLOYMENT_STATUS.md`](docs/DEPLOYMENT_STATUS.md).
 
 ---
 
@@ -137,7 +139,9 @@ Health check: http://localhost:8000/health
 ```bash
 cd frontend
 npm install
-# Edit BACKEND_URL in next.config.js if backend is not on localhost:8000
+# BACKEND_URL is read by the request-time proxy handlers. For plain next dev,
+# export it here or put it in frontend/.env.local; Vercel injects it instead.
+export BACKEND_URL=http://127.0.0.1:8000
 npm run dev
 ```
 
@@ -165,7 +169,7 @@ Copy `.env.example` to `.env` in the project root (or `backend/`):
 | `CACHE_MAX_ENTRIES` / `CPCB_MAX_LOCKS` | No | Bounds for attacker-controlled cache keys and per-key locks |
 | `ENVIRONMENT` | No | `development` or `production` |
 | `CACHE_TTL_SECONDS` | No | Observation cache TTL (default: 900s) |
-| `BACKEND_URL` | Frontend | URL of backend for the explicit Next.js rewrite allowlist |
+| `BACKEND_URL` | Frontend (local) | Backend base URL read at request time by the Next.js proxy handlers. On Vercel this is injected by the `backend` service binding; do not set it manually there. |
 
 The complete list of CPCB pagination, timeout, freshness and cache settings is in
 [`docs/CPCB_INTEGRATION.md`](docs/CPCB_INTEGRATION.md); rate-limit store settings are in
@@ -184,9 +188,9 @@ The complete list of CPCB pagination, timeout, freshness and cache settings is i
 ```bash
 cd backend
 source .venv/bin/activate
-pytest tests/ -q     # 155 passed, 2 live tests skipped by default
+pytest tests/ -q     # 158 passed, 2 live tests skipped by default
 RUN_LIVE_TESTS=1 pytest tests/integration -q -m live   # opt-in; requires network + keys
-coverage run -m pytest tests/ -q && coverage report --include='app/*'  # app code: 86%
+coverage run -m pytest tests/ -q && coverage report --include='app/*'  # app code: 87%
 ```
 
 Test categories:
@@ -199,7 +203,7 @@ Test categories:
 ```bash
 cd frontend
 npm run type-check   # TypeScript strict mode
-npm run test:ci      # Vitest + React Testing Library + axe; 61 passed
+npm run test:ci      # Vitest + React Testing Library + axe; 72 passed
 npm run build        # Next 16 production build; / first-load JS diagnostics: 975,893 B raw / 269,865 B gzip
 ```
 
@@ -209,21 +213,29 @@ All provider tests use mocked HTTP by default. Live tests are opt-in and are **n
 
 ## Deployment
 
-### Backend (Render.com)
+### Vercel Services (repository root)
 
-1. Connect your GitHub repository to Render
-2. Create a new **Web Service** pointing to `backend/`
-3. Build command: `pip install -r requirements.txt`
-4. Start command: `uvicorn app.main:app --host 0.0.0.0 --port $PORT`
-5. Set environment variables in Render dashboard
-6. The `backend/render.yaml` configures this automatically for IaC deployment
+The root [`vercel.json`](vercel.json) defines two services in one project:
 
-### Frontend (Vercel)
+- `backend` — FastAPI service rooted at `backend/`, internal only.
+- `frontend` — Next.js service rooted at `frontend/`, the only public service.
 
-1. Import repository to Vercel
-2. Set **Root Directory** to `frontend`
-3. Add environment variable: `BACKEND_URL=https://your-render-service.onrender.com`
-4. Deploy — `frontend/vercel.json` handles API proxy rewrites
+The frontend declares a service binding to the backend as `BACKEND_URL`. Vercel injects that URL into the Next.js route handlers at runtime; do **not** set `BACKEND_URL` manually in the Vercel dashboard. Browser requests stay same-origin (`/api/v1/*`, `/health`) and are proxied by request-time route handlers that read the binding.
+
+To deploy:
+
+1. Import the GitHub repository into Vercel with **Root Directory** set to the repository root.
+2. Select the **Services** framework preset (CLI: `vercel project update --framework services`).
+3. Set `ENVIRONMENT=production` and `CORS_ORIGINS` to the HTTPS deployment origin(s). Provider keys remain optional server-side secrets.
+4. Do not set `BACKEND_URL` or `NEXT_PUBLIC_API_BASE_URL` in Vercel.
+5. Deploy. Preview deployments receive a preview-scoped backend binding automatically.
+6. Test locally with `vercel dev` (or `vercel dev --local`) so the binding is injected the same way.
+
+See [`docs/VERCEL_SERVICES.md`](docs/VERCEL_SERVICES.md) for the routing contract and environment-variable checklist. Configuration is prepared here; no deployment has been executed from this environment.
+
+### Backend (Render.com template)
+
+`backend/render.yaml` remains an alternative Render web-service blueprint. It is not used by the Vercel Services deployment.
 
 ### Docker (Backend)
 
