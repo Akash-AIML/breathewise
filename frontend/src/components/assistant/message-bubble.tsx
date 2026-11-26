@@ -58,7 +58,7 @@ export function MessageBubble({ msg }: { msg: AssistantMessage }) {
         {/* Grounding badges — only on assistant messages */}
         {!isUser && (
           <div className="mt-2 space-y-1.5">
-            {msg.aqi != null && (
+            {msg.aqi !== null && msg.aqi !== undefined && (
               <div className="flex flex-wrap gap-1.5 items-center">
                 <Badge variant="neutral" className="text-xs">
                   AQI {msg.aqi}

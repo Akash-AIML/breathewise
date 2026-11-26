@@ -51,7 +51,7 @@ export const SustainableAlternativesView: React.FC<SustainableAlternativesProps>
 
   const communityBrief =
     `BreatheWise Community & School Smog Brief (${stationName}` +
-    `${currentAqi != null ? ` • Live AQI ${currentAqi}` : ""}):\n` +
+    `${currentAqi !== null && currentAqi !== undefined ? ` • Live AQI ${currentAqi}` : ""}):\n` +
     (isHighSmog
       ? "• Schools/RWAs: Move morning assemblies & outdoor sports indoors during 6–10 AM thermal inversion.\n" +
         "• Residents: Form 2–4 person Metro/AC carpools; strictly halt open leaf/waste burning & check DG exhaust.\n" +

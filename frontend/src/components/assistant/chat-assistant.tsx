@@ -113,7 +113,7 @@ export function ChatAssistant({
             <span aria-hidden="true">🌬️</span>
             BreatheWise Assistant
           </h2>
-          {currentAqi != null && (
+          {currentAqi !== null && currentAqi !== undefined && (
             <p className="text-xs text-gray-500 dark:text-gray-400">
               Grounded on live AQI: <strong>{currentAqi}</strong>
             </p>
