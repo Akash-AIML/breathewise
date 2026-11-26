@@ -12,6 +12,7 @@ id_rsa*
 .netrc
 .pytest_cache/
 .coverage
+coverage/
 htmlcov/
 dist/
 .next/

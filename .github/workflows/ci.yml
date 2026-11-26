@@ -72,8 +72,8 @@ jobs:
           npx tsc --noEmit
           npm run lint
 
-      - name: Run Unit Tests
-        run: npm run test:ci
+      - name: Run Unit Tests with Coverage Gate
+        run: npm run test:coverage
 
       - name: Production Build
         run: npm run build

@@ -2,7 +2,7 @@ import logging
 import math
 import re
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Any, NamedTuple
 from zoneinfo import ZoneInfo
 
 from app.adapters.cpcb_transport import CPCBResponseError
@@ -17,6 +17,7 @@ from app.core.geo import (
 )
 from app.schemas.cpcb import CPCBPollutantStats, CPCBStationObservation
 from app.schemas.observation import (
+    AQICategory,
     DataQualityStatus,
     NormalizedObservation,
     NormalizedPollutantReading,
@@ -49,6 +50,13 @@ _AQI_UNVERIFIED_NOTE = (
     "for this feed. Pollutant concentrations are shown without an AQI claim."
 )
 _DUPLICATE_WARNING = "Duplicate pollutant rows were collapsed."
+
+
+class _PublicAQI(NamedTuple):
+    calculated_aqi: int | None
+    dominant_pollutant: PollutantType | None
+    aqi_category: AQICategory | None
+    data_sufficiency_met: bool
 
 
 class CPCBParsingMixin:
@@ -307,6 +315,38 @@ class CPCBParsingMixin:
             source_observation_time=observation.last_update,
         )
 
+    @classmethod
+    def _readings_from(
+        cls, observation: CPCBStationObservation
+    ) -> dict[str, NormalizedPollutantReading]:
+        return {
+            pollutant_key: reading
+            for pollutant_key, stats in observation.pollutants.items()
+            if (reading := cls._reading_from_stats(pollutant_key, stats)) is not None
+        }
+
+    @staticmethod
+    def _calc_from_readings(
+        readings: dict[str, NormalizedPollutantReading],
+    ) -> AQICalculatorResult | None:
+        # Only recognized PollutantType identities (already filtered by
+        # _reading_from_stats) may reach the official CPCB calculator.
+        aqi_inputs = {reading.pollutant: reading for reading in readings.values()}
+        if not aqi_inputs:
+            return None
+        return compute_official_cpcb_aqi(aqi_inputs)
+
+    @staticmethod
+    def _public_aqi(calc_result: AQICalculatorResult | None, aqi_allowed: bool) -> _PublicAQI:
+        if calc_result is None or not aqi_allowed:
+            return _PublicAQI(None, None, None, False)
+        return _PublicAQI(
+            calculated_aqi=calc_result.aqi,
+            dominant_pollutant=calc_result.dominant_pollutant,
+            aqi_category=calc_result.category,
+            data_sufficiency_met=calc_result.data_sufficiency_met,
+        )
+
     def to_normalized(
         self,
         observation: CPCBStationObservation,
@@ -314,30 +354,19 @@ class CPCBParsingMixin:
         user_lon: float | None = None,
         distance: float | None = None,
     ) -> NormalizedObservation:
-        readings = {
-            pollutant_key: reading
-            for pollutant_key, stats in observation.pollutants.items()
-            if (reading := self._reading_from_stats(pollutant_key, stats)) is not None
-        }
-
-        # Only recognized PollutantType identities (already filtered by
-        # _reading_from_stats) may reach the official CPCB calculator.
-        aqi_inputs = {r.pollutant: r for r in readings.values()}
-        calc_result = compute_official_cpcb_aqi(aqi_inputs) if aqi_inputs else None
+        readings = self._readings_from(observation)
+        calc_result = self._calc_from_readings(readings)
         aqi_allowed = settings.CPCB_AVERAGING_PERIOD_VERIFIED
+        aqi = self._public_aqi(calc_result, aqi_allowed)
 
         return NormalizedObservation(
             provider="CPCB/data.gov.in",
             station=self._station_metadata(observation, user_lat, user_lon, distance),
             readings=readings,
-            calculated_aqi=calc_result.aqi if calc_result and aqi_allowed else None,
-            dominant_pollutant=calc_result.dominant_pollutant
-            if calc_result and aqi_allowed
-            else None,
-            aqi_category=calc_result.category if calc_result and aqi_allowed else None,
-            data_sufficiency_met=bool(
-                calc_result and calc_result.data_sufficiency_met and aqi_allowed
-            ),
+            calculated_aqi=aqi.calculated_aqi,
+            dominant_pollutant=aqi.dominant_pollutant,
+            aqi_category=aqi.aqi_category,
+            data_sufficiency_met=aqi.data_sufficiency_met,
             measurement_timestamp=observation.last_update,
             retrieval_timestamp=observation.retrieval_timestamp,
             data_quality_status=observation.freshness,
