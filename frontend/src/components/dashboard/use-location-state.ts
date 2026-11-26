@@ -5,6 +5,10 @@ import { MapStation } from "@/components/dashboard/station-map";
 import { fetchReverseGeocode, searchLocations, GeocodedLocation } from "@/lib/api";
 import { nearestNamedLocation } from "@/lib/geo";
 
+// Browsers without GPS (common on laptops) often return an IP/Wi-Fi point with
+// a city-sized accuracy radius. Do not present that as an exact device fix.
+const MAX_TRUSTED_ACCURACY_METERS = 2_000;
+
 export const POPULAR_CITIES: (MapStation & { distance_km?: number })[] = [
   { name: "Delhi (ITO)", station_id: "cpcb_delhi_ito", city: "Delhi", state: "Delhi", lat: 28.6289, lon: 77.2407 },
   { name: "Delhi (Anand Vihar)", station_id: "cpcb_delhi_anand_vihar", city: "Delhi", state: "Delhi", lat: 28.6469, lon: 77.3160 },
@@ -60,8 +64,16 @@ export function useLocationState(): LocationState {
           setGeoStatus("The device returned invalid coordinates. Search for your city or choose a station below.");
           return;
         }
-        const accuracy = Number.isFinite(pos.coords.accuracy)
-          ? ` Device-reported accuracy: ±${Math.round(pos.coords.accuracy)} m.`
+        const reportedAccuracy = pos.coords.accuracy;
+        if (Number.isFinite(reportedAccuracy) && reportedAccuracy > MAX_TRUSTED_ACCURACY_METERS) {
+          setGeoStatus(
+            `Your browser returned an approximate location (${userLat.toFixed(4)}, ${userLon.toFixed(4)}) with ±${Math.round(reportedAccuracy)} m accuracy. Laptops without GPS often fall back to IP/Wi-Fi, so this is not treated as your exact location. Search for your city below or use a GPS device.`
+          );
+          setLocationResults([]);
+          return;
+        }
+        const accuracy = Number.isFinite(reportedAccuracy)
+          ? ` Device-reported accuracy: ±${Math.round(reportedAccuracy)} m.`
           : "";
         const prefix = `Using exact device coordinates (${userLat.toFixed(4)}, ${userLon.toFixed(4)}).${accuracy}`;
         // Do not block the data fetch on naming: exact coordinates are authoritative.

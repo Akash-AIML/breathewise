@@ -33,7 +33,7 @@ describe("HomePage location handling", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockFetch(null);
-    setGeolocation(28.6289, 77.2407);
+    setGeolocation(28.6289, 77.2407, 35);
   });
 
   it("uses exact device coordinates instead of snapping to a hardcoded city", async () => {
@@ -63,8 +63,22 @@ describe("HomePage location handling", () => {
     ).toBeInTheDocument();
   });
 
+  it("rejects a city-sized laptop fix instead of calling it exact", async () => {
+    setGeolocation(40.7128, -74.006, 25_000);
+    render(<HomePage />);
+    fireEvent.click(screen.getByRole("button", { name: /Use My Location/i }));
+
+    expect(
+      await screen.findByText(/approximate location \(40\.7128, -74\.0060\).*±25000 m accuracy/i)
+    ).toBeInTheDocument();
+    expect(screen.getByText(/not treated as your exact location/i)).toBeInTheDocument();
+    const urls = (global.fetch as ReturnType<typeof vi.fn>).mock.calls.map((call) => String(call[0]));
+    expect(urls.some((url) => url.includes("lat=40.7128"))).toBe(false);
+    expect(screen.getAllByText(/Delhi \(ITO\)/i).length).toBeGreaterThan(0);
+  });
+
   it("rejects invalid device coordinates instead of selecting them", async () => {
-    setGeolocation(Number.NaN, Number.NaN);
+    setGeolocation(Number.NaN, Number.NaN, 35);
     render(<HomePage />);
     fireEvent.click(screen.getByRole("button", { name: /Use My Location/i }));
 
