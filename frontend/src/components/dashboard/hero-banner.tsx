@@ -12,6 +12,7 @@ interface HeroBannerProps {
   selectedStation: MapStation;
   locationQuery: string;
   manualCoordinates: string;
+  hasSavedCoordinates: boolean;
   isSearchingLocation: boolean;
   geoStatus: string | null;
   locationResults: GeocodedLocation[];
@@ -22,6 +23,7 @@ interface HeroBannerProps {
   onLocationSearch: (event: React.FormEvent<HTMLFormElement>) => void;
   onManualCoordinatesChange: (value: string) => void;
   onManualCoordinatesSubmit: (event: React.FormEvent<HTMLFormElement>) => void;
+  onClearSavedCoordinates: () => void;
   onSelectGeocodedLocation: (place: GeocodedLocation) => void;
   onSelectStation: (station: MapStation) => void;
 }
@@ -31,6 +33,7 @@ export const HeroBanner: React.FC<HeroBannerProps> = ({
   selectedStation,
   locationQuery,
   manualCoordinates,
+  hasSavedCoordinates,
   isSearchingLocation,
   geoStatus,
   locationResults,
@@ -41,6 +44,7 @@ export const HeroBanner: React.FC<HeroBannerProps> = ({
   onLocationSearch,
   onManualCoordinatesChange,
   onManualCoordinatesSubmit,
+  onClearSavedCoordinates,
   onSelectGeocodedLocation,
   onSelectStation,
 }) => (
@@ -143,6 +147,17 @@ export const HeroBanner: React.FC<HeroBannerProps> = ({
           <Crosshair className="h-3.5 w-3.5" aria-hidden="true" />
           Use Coordinates
         </Button>
+        {hasSavedCoordinates && (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={onClearSavedCoordinates}
+            className="border-emerald-700 text-emerald-200 hover:bg-emerald-800 text-xs"
+          >
+            Clear saved coordinates
+          </Button>
+        )}
       </form>
 
       {geoStatus && (

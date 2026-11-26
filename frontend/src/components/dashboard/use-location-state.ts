@@ -1,13 +1,38 @@
 "use client";
 
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import { MapStation } from "@/components/dashboard/station-map";
 import { fetchReverseGeocode, searchLocations, GeocodedLocation } from "@/lib/api";
-import { nearestNamedLocation } from "@/lib/geo";
+import { haversineDistanceKm, nearestNamedLocation } from "@/lib/geo";
 
 // Browsers without GPS (common on laptops) often return an IP/Wi-Fi point with
-// a city-sized accuracy radius. Do not present that as an exact device fix.
-const MAX_TRUSTED_ACCURACY_METERS = 2_000;
+// a city-sized accuracy radius. Keep those coordinates usable, but label them
+// honestly instead of discarding a legitimate fix.
+const LOW_ACCURACY_WARNING_METERS = 2_000;
+
+// A confirmed coordinate pair is more trustworthy than a laptop browser fix,
+// including fixes that claim unrealistically small accuracy.
+export const SAVED_COORDINATES_KEY = "breathewise.exactCoordinates";
+const MAX_SAVED_DISTANCE_KM = 25;
+
+interface ExactCoordinates {
+  lat: number;
+  lon: number;
+}
+
+function parseCoordinates(value: string): ExactCoordinates | null {
+  const parts = value.trim().split(/[\s,]+/).filter(Boolean);
+  if (parts.length !== 2) return null;
+  const lat = Number(parts[0]);
+  const lon = Number(parts[1]);
+  if (!Number.isFinite(lat) || lat < -90 || lat > 90) return null;
+  if (!Number.isFinite(lon) || lon < -180 || lon > 180) return null;
+  return { lat, lon };
+}
+
+function formatCoordinatesLabel(coords: ExactCoordinates): string {
+  return `${coords.lat.toFixed(4)}, ${coords.lon.toFixed(4)}`;
+}
 
 export const POPULAR_CITIES: (MapStation & { distance_km?: number })[] = [
   { name: "Delhi (ITO)", station_id: "cpcb_delhi_ito", city: "Delhi", state: "Delhi", lat: 28.6289, lon: 77.2407 },
@@ -32,6 +57,8 @@ export interface LocationState {
   setLocationQuery: React.Dispatch<React.SetStateAction<string>>;
   manualCoordinates: string;
   setManualCoordinates: React.Dispatch<React.SetStateAction<string>>;
+  hasSavedCoordinates: boolean;
+  clearSavedCoordinates: () => void;
   locationResults: GeocodedLocation[];
   isSearchingLocation: boolean;
   handleUseMyLocation: () => void;
@@ -49,8 +76,32 @@ export function useLocationState(): LocationState {
   const locationRequestRef = useRef(0);
   const [locationQuery, setLocationQuery] = useState("");
   const [manualCoordinates, setManualCoordinates] = useState("");
+  const [savedCoordinates, setSavedCoordinates] = useState<ExactCoordinates | null>(null);
   const [locationResults, setLocationResults] = useState<GeocodedLocation[]>([]);
   const [isSearchingLocation, setIsSearchingLocation] = useState(false);
+
+  // Restore a confirmed coordinate pair before using any browser-provided fix.
+  useEffect(() => {
+    const raw = window.localStorage.getItem(SAVED_COORDINATES_KEY);
+    const coords = raw ? parseCoordinates(raw) : null;
+    if (!coords) {
+      return;
+    }
+    setSavedCoordinates(coords);
+    setManualCoordinates(formatCoordinatesLabel(coords));
+    setSelectedStation({
+      name: "Saved Coordinates",
+      station_id: "saved_coordinates",
+      city: "Saved coordinates",
+      state: "",
+      lat: coords.lat,
+      lon: coords.lon,
+    });
+    setLocationLabel(formatCoordinatesLabel(coords));
+    setGeoStatus(
+      `Using saved coordinates (${formatCoordinatesLabel(coords)}). Enter new coordinates or clear them to change this location.`
+    );
+  }, []);
 
   const handleUseMyLocation = () => {
     if (!navigator.geolocation) {
@@ -69,20 +120,32 @@ export function useLocationState(): LocationState {
           return;
         }
         const reportedAccuracy = pos.coords.accuracy;
-        if (Number.isFinite(reportedAccuracy) && reportedAccuracy > MAX_TRUSTED_ACCURACY_METERS) {
+        const isApproximate =
+          Number.isFinite(reportedAccuracy) && reportedAccuracy > LOW_ACCURACY_WARNING_METERS;
+        const accuracy = Number.isFinite(reportedAccuracy)
+          ? ` Device-reported accuracy: ±${Math.round(reportedAccuracy)} m.`
+          : "";
+        const distanceFromSavedKm = savedCoordinates
+          ? haversineDistanceKm(userLat, userLon, savedCoordinates.lat, savedCoordinates.lon)
+          : null;
+        const rejectedBySavedCoordinates =
+          savedCoordinates !== null &&
+          distanceFromSavedKm !== null &&
+          distanceFromSavedKm > MAX_SAVED_DISTANCE_KM;
+        if (savedCoordinates && rejectedBySavedCoordinates && distanceFromSavedKm !== null) {
           setGeoStatus(
-            `Your browser returned an approximate location (${userLat.toFixed(4)}, ${userLon.toFixed(4)}) with ±${Math.round(reportedAccuracy)} m accuracy. Laptops without GPS often fall back to IP/Wi-Fi, so this is not treated as your exact location. Search for your city below or use a GPS device.`
+            `Browser reported (${userLat.toFixed(4)}, ${userLon.toFixed(4)}).${accuracy} That is ${distanceFromSavedKm.toFixed(0)} km from your saved coordinates (${formatCoordinatesLabel(savedCoordinates)}), so it was ignored. Keeping saved coordinates. Clear saved coordinates to use device location.`
           );
           setLocationResults([]);
           return;
         }
-        const accuracy = Number.isFinite(reportedAccuracy)
-          ? ` Device-reported accuracy: ±${Math.round(reportedAccuracy)} m.`
-          : "";
-        const prefix = `Using exact device coordinates (${userLat.toFixed(4)}, ${userLon.toFixed(4)}).${accuracy}`;
-        // Do not block the data fetch on naming: exact coordinates are authoritative.
+        const prefix = isApproximate
+          ? `Using browser coordinates (${userLat.toFixed(4)}, ${userLon.toFixed(4)}).${accuracy} This may be a Wi‑Fi/IP estimate rather than an exact device fix.`
+          : `Using exact device coordinates (${userLat.toFixed(4)}, ${userLon.toFixed(4)}).${accuracy}`;
+        // Do not block the data fetch on naming or accuracy: coordinates are
+        // still the only location input, and low accuracy is disclosed above.
         setGeoStatus(`${prefix} Resolving place name...`);
-        setLocationLabel("Exact device coordinates");
+        setLocationLabel(isApproximate ? "Approximate device coordinates" : "Exact device coordinates");
         setLocationResults([]);
         setSelectedStation({
           name: "My Exact Location",
@@ -94,7 +157,9 @@ export function useLocationState(): LocationState {
         });
 
         void fetchReverseGeocode(userLat, userLon).then((place) => {
-          if (requestId !== locationRequestRef.current) return;
+          if (requestId !== locationRequestRef.current) {
+            return;
+          }
           // A hardcoded popular city is only a credible fallback when genuinely
           // close. Otherwise reporting "near Bengaluru" 160 km away is wrong.
           const nearby = nearestNamedLocation(userLat, userLon, POPULAR_CITIES);
@@ -118,19 +183,23 @@ export function useLocationState(): LocationState {
         if (requestId !== locationRequestRef.current) return;
         setGeoStatus("Location access denied or timed out. Search for your city or choose a station below.");
       },
-      { timeout: 10000, enableHighAccuracy: true, maximumAge: 0 }
+      // Do not force maximumAge: 0. On some laptops the fresh fix is much
+      // worse than the browser's cached fix. Let the browser choose and report
+      // the accuracy explicitly instead of silently discarding its better fix.
+      { timeout: 10000, enableHighAccuracy: true }
     );
   };
 
   const handleLocationSearch = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (locationQuery.trim().length < 2) {
+    const query = locationQuery.trim();
+    if (query.length < 2) {
       setGeoStatus("Enter at least two characters to search for a place.");
       return;
     }
     setIsSearchingLocation(true);
     try {
-      const results = await searchLocations(locationQuery);
+      const results = await searchLocations(query);
       setLocationResults(results);
       setGeoStatus(
         results.length === 0
@@ -164,6 +233,8 @@ export function useLocationState(): LocationState {
     }
 
     locationRequestRef.current += 1;
+    window.localStorage.setItem(SAVED_COORDINATES_KEY, `${lat.toFixed(6)}, ${lon.toFixed(6)}`);
+    setSavedCoordinates({ lat, lon });
     setSelectedStation({
       name: "Manual Coordinates",
       station_id: "manual_coordinates",
@@ -173,7 +244,17 @@ export function useLocationState(): LocationState {
       lon,
     });
     setLocationLabel(`${lat.toFixed(4)}, ${lon.toFixed(4)}`);
-    setGeoStatus(`Using manually entered coordinates (${lat.toFixed(4)}, ${lon.toFixed(4)}).`);
+    setGeoStatus(
+      `Using manually entered coordinates (${lat.toFixed(4)}, ${lon.toFixed(4)}). Saved in this browser.`
+    );
+    setLocationResults([]);
+  };
+
+  const clearSavedCoordinates = () => {
+    window.localStorage.removeItem(SAVED_COORDINATES_KEY);
+    setSavedCoordinates(null);
+    setManualCoordinates("");
+    setGeoStatus("Saved coordinates cleared. Use My Location will use the browser again.");
     setLocationResults([]);
   };
 
@@ -209,6 +290,8 @@ export function useLocationState(): LocationState {
     setLocationQuery,
     manualCoordinates,
     setManualCoordinates,
+    hasSavedCoordinates: savedCoordinates !== null,
+    clearSavedCoordinates,
     locationResults,
     isSearchingLocation,
     handleUseMyLocation,

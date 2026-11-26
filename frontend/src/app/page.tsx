@@ -36,6 +36,8 @@ export default function HomePage() {
     setLocationQuery,
     manualCoordinates,
     setManualCoordinates,
+    hasSavedCoordinates,
+    clearSavedCoordinates,
     locationResults,
     isSearchingLocation,
     handleUseMyLocation,
@@ -177,6 +179,7 @@ export default function HomePage() {
         selectedStation={selectedStation}
         locationQuery={locationQuery}
         manualCoordinates={manualCoordinates}
+        hasSavedCoordinates={hasSavedCoordinates}
         isSearchingLocation={isSearchingLocation}
         geoStatus={geoStatus}
         locationResults={locationResults}
@@ -187,6 +190,7 @@ export default function HomePage() {
         onLocationSearch={handleLocationSearch}
         onManualCoordinatesChange={setManualCoordinates}
         onManualCoordinatesSubmit={handleManualCoordinates}
+        onClearSavedCoordinates={clearSavedCoordinates}
         onSelectGeocodedLocation={selectGeocodedLocation}
         onSelectStation={handleSelectStation}
       />

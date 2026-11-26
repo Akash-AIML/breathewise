@@ -1,6 +1,7 @@
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import HomePage from "@/app/page";
+import { SAVED_COORDINATES_KEY } from "@/components/dashboard/use-location-state";
 
 function setGeolocation(latitude: number, longitude: number, accuracy?: number) {
   Object.defineProperty(navigator, "geolocation", {
@@ -32,6 +33,7 @@ function mockFetch(reversePlace: unknown) {
 describe("HomePage location handling", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    window.localStorage.clear();
     mockFetch(null);
     setGeolocation(28.6289, 77.2407, 35);
   });
@@ -46,11 +48,10 @@ describe("HomePage location handling", () => {
     });
     expect(screen.queryByText(/Nearest Station/i)).not.toBeInTheDocument();
     expect(screen.getByText(/My Exact Location/i)).toBeInTheDocument();
-    expect(
-      (navigator.geolocation.getCurrentPosition as ReturnType<typeof vi.fn>).mock.calls[0][2]
-    ).toEqual(
-      expect.objectContaining({ enableHighAccuracy: true, maximumAge: 0, timeout: 10000 })
-    );
+    const options = (navigator.geolocation.getCurrentPosition as ReturnType<typeof vi.fn>).mock
+      .calls[0][2] as PositionOptions;
+    expect(options).toEqual(expect.objectContaining({ enableHighAccuracy: true, timeout: 10000 }));
+    expect(options).not.toHaveProperty("maximumAge");
   });
 
   it("shows the browser-reported accuracy alongside device coordinates", async () => {
@@ -63,18 +64,19 @@ describe("HomePage location handling", () => {
     ).toBeInTheDocument();
   });
 
-  it("rejects a city-sized laptop fix instead of calling it exact", async () => {
+  it("uses a city-sized laptop fix but labels it as approximate", async () => {
     setGeolocation(40.7128, -74.006, 25_000);
     render(<HomePage />);
     fireEvent.click(screen.getByRole("button", { name: /Use My Location/i }));
 
-    expect(
-      await screen.findByText(/approximate location \(40\.7128, -74\.0060\).*±25000 m accuracy/i)
-    ).toBeInTheDocument();
-    expect(screen.getByText(/not treated as your exact location/i)).toBeInTheDocument();
+    const status = await screen.findByRole("status");
+    expect(status.textContent).toMatch(
+      /Using browser coordinates \(40\.7128, -74\.0060\).*±25000 m\./i
+    );
+    expect(status.textContent).toMatch(/wi[-‑]fi\/ip estimate/i);
     const urls = (global.fetch as ReturnType<typeof vi.fn>).mock.calls.map((call) => String(call[0]));
-    expect(urls.some((url) => url.includes("lat=40.7128"))).toBe(false);
-    expect(screen.getAllByText(/Delhi \(ITO\)/i).length).toBeGreaterThan(0);
+    expect(urls.some((url) => url.includes("lat=40.7128") && url.includes("lon=-74.006"))).toBe(true);
+    expect(screen.getByText(/Coordinates: 40\.7128°N, 74\.0060°W/i)).toBeInTheDocument();
   });
 
   it("uses manually entered coordinates when the laptop browser is wrong", async () => {
@@ -91,6 +93,7 @@ describe("HomePage location handling", () => {
     expect(
       screen.getByText(/using manually entered coordinates \(12\.9716, 77\.5946\)/i)
     ).toBeInTheDocument();
+    expect(window.localStorage.getItem(SAVED_COORDINATES_KEY)).toContain("12.9716");
   });
 
   it("rejects manual coordinates outside valid latitude and longitude ranges", async () => {
@@ -164,5 +167,36 @@ describe("HomePage location handling", () => {
         screen.getByText(/Using exact device coordinates \(28\.6289, 77\.2407\).*Nearest mapped station: Delhi \(0\.0 km away\)/i)
       ).toBeInTheDocument();
     });
+  });
+
+  it("keeps saved coordinates when the browser reports a distant fix", async () => {
+    window.localStorage.setItem(SAVED_COORDINATES_KEY, "11.4953, 77.2793");
+    setGeolocation(11.2448, 75.7721, 1);
+    render(<HomePage />);
+
+    expect(
+      await screen.findByText(/Using saved coordinates \(11\.4953, 77\.2793\)/i)
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /Use My Location/i }));
+
+    expect(
+      await screen.findByText(/That is \d+ km from your saved coordinates.*Keeping saved coordinates/i)
+    ).toBeInTheDocument();
+    const urls = (global.fetch as ReturnType<typeof vi.fn>).mock.calls.map((call) => String(call[0]));
+    expect(urls.some((url) => url.includes("lat=11.2448"))).toBe(false);
+    expect(screen.getByText(/Coordinates: 11\.4953°N, 77\.2793°E/i)).toBeInTheDocument();
+  });
+
+  it("clears saved coordinates on request", async () => {
+    window.localStorage.setItem(SAVED_COORDINATES_KEY, "11.4953, 77.2793");
+    render(<HomePage />);
+
+    expect(
+      await screen.findByText(/Using saved coordinates \(11\.4953, 77\.2793\)/i)
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /Clear saved coordinates/i }));
+
+    expect(await screen.findByText(/Saved coordinates cleared/i)).toBeInTheDocument();
+    expect(window.localStorage.getItem(SAVED_COORDINATES_KEY)).toBeNull();
   });
 });

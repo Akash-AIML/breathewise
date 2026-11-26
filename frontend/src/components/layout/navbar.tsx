@@ -1,6 +1,6 @@
 import React from "react";
 import Link from "next/link";
-import { Wind, Shield, Home, Compass, MessageSquare } from "lucide-react";
+import { Wind, MessageSquare } from "lucide-react";
 
 export const Navbar = () => {
   return (
@@ -25,30 +25,6 @@ export const Navbar = () => {
         </Link>
 
         <nav className="hidden md:flex items-center gap-6 text-sm font-medium text-slate-600 dark:text-slate-300" aria-label="Main Navigation">
-          <Link
-            href="/"
-            className="hover:text-emerald-700 transition-colors dark:hover:text-emerald-400"
-          >
-            Dashboard
-          </Link>
-          <Link
-            href="#planner"
-            className="hover:text-emerald-700 transition-colors dark:hover:text-emerald-400"
-          >
-            Daily Planner
-          </Link>
-          <Link
-            href="#indoor"
-            className="hover:text-emerald-700 transition-colors dark:hover:text-emerald-400"
-          >
-            Indoor Air
-          </Link>
-          <Link
-            href="#alternatives"
-            className="hover:text-emerald-700 transition-colors dark:hover:text-emerald-400"
-          >
-            Sustainable Transit
-          </Link>
           <Link
             href="#assistant"
             className="flex items-center gap-1.5 rounded-md bg-emerald-50 px-3 py-1.5 text-emerald-800 font-semibold hover:bg-emerald-100 transition-colors dark:bg-emerald-950 dark:text-emerald-300"
