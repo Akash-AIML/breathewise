@@ -25,8 +25,8 @@ _pace_lock = asyncio.Lock()
 _last_reverse_request: datetime | None = None
 
 
-async def fetch_geocoding(name: str) -> list[dict[str, Any]]:
-    """Server-side geocoding proxy so browsers never call a third-party host directly."""
+async def _request_geocoding_payload(name: str) -> Any:
+    """Fetch raw geocoding JSON from the upstream provider."""
     try:
         async with httpx.AsyncClient(
             timeout=httpx.Timeout(
@@ -40,37 +40,40 @@ async def fetch_geocoding(name: str) -> list[dict[str, Any]]:
                 GEOCODING_URL,
                 params={"name": name, "count": 5, "language": "en", "format": "json"},
             )
-    except httpx.HTTPError:
-        logger.warning("Geocoding provider request failed.")
+    except httpx.HTTPError as exc:
+        logger.warning("Geocoding provider request failed (%s).", type(exc).__name__)
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Location search is temporarily unavailable.",
-        ) from None
+        ) from exc
     if response.status_code != 200:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Location search is temporarily unavailable.",
         )
     try:
-        payload = response.json()
-    except ValueError:
+        return response.json()
+    except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Location search returned an invalid response.",
-        ) from None
+        ) from exc
+
+
+def _sanitize_geocoding_results(payload: Any) -> list[dict[str, Any]]:
+    """Keep only allowlisted, bounded geocoding fields."""
     results = payload.get("results") if isinstance(payload, dict) else None
     if not isinstance(results, list):
         return []
-    # Do not relay arbitrary provider fields to the browser.
     allowed = ("id", "name", "latitude", "longitude", "admin1", "country")
     cleaned: list[dict[str, Any]] = []
     for item in results:
         if not isinstance(item, dict):
             continue
-        if not (
-            isinstance(item.get("latitude"), (int, float))
-            and isinstance(item.get("longitude"), (int, float))
-        ):
+        has_coords = isinstance(item.get("latitude"), (int, float)) and isinstance(
+            item.get("longitude"), (int, float)
+        )
+        if not has_coords:
             continue
         entry: dict[str, Any] = {}
         for field in allowed:
@@ -82,6 +85,12 @@ async def fetch_geocoding(name: str) -> list[dict[str, Any]]:
         if entry.get("name"):
             cleaned.append(entry)
     return cleaned
+
+
+async def fetch_geocoding(name: str) -> list[dict[str, Any]]:
+    """Server-side geocoding proxy so browsers never call a third-party host directly."""
+    payload = await _request_geocoding_payload(name)
+    return _sanitize_geocoding_results(payload)
 
 
 @router.get("/search")

@@ -16,4 +16,9 @@ htmlcov/
 dist/
 .next/
 next-env.d.ts
+*.tsbuildinfo
+docs/artifacts/*
+*.mp4
+*.webm
+!docs/artifacts/breathewise-demo.mp4
 

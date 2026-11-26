@@ -1,7 +1,9 @@
 import logging
 
+import httpx
 from fastapi import APIRouter, HTTPException, Query, status
 
+from app.adapters.cpcb_transport import CPCBProviderError
 from app.core.config import settings
 from app.schemas.api import AirQualityResponse
 from app.services.air_quality_service import AirQualityService
@@ -37,7 +39,7 @@ async def get_air_quality(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=str(e),
         ) from e
-    except Exception as e:
+    except (httpx.HTTPError, TimeoutError, CPCBProviderError, RuntimeError) as e:
         logger.error("Error retrieving air quality for (%s, %s): %s", lat, lon, str(e))
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

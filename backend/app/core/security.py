@@ -140,7 +140,8 @@ class RedisRateLimitStore(RateLimitStore):
     async def check(self, key: str, max_requests: int, window_seconds: int) -> tuple[bool, int]:
         if self._client is None:
             await self.setup()
-        assert self._client is not None
+        if self._client is None:
+            raise RuntimeError("Redis rate-limit client failed to initialize")
 
         window_ms = max(1, int(window_seconds * 1000))
         current, ttl_ms = await self._client.eval(
@@ -261,14 +262,17 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                 await self.store.setup()
                 self._store_ready = True
             allowed, retry_after = await self.store.check(store_key, limit, self.window_seconds)
-        except Exception:
-            # Do not log the exception: driver errors can embed REDIS_URL,
-            # including its password. Cheap reads fail open; a throttle outage
-            # must never remove the last guard on paid LLM/geocoding routes.
+        except Exception as exc:
+            # Log only the exception type: driver errors can embed REDIS_URL credentials.
+            err_name = type(exc).__name__
             if bucket == "global":
-                logger.warning("Rate-limit store unavailable; allowing request (fail-open)")
+                logger.warning(
+                    "Rate-limit store unavailable (%s); allowing request (fail-open)", err_name
+                )
                 return await call_next(request)
-            logger.warning("Rate-limit store unavailable; using local fallback for %s", bucket)
+            logger.warning(
+                "Rate-limit store unavailable (%s); using local fallback for %s", err_name, bucket
+            )
             allowed, retry_after = await self._fallback_store.check(
                 store_key, limit, self.window_seconds
             )

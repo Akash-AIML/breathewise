@@ -2,12 +2,7 @@ import logging
 
 from fastapi import APIRouter, HTTPException, Query, status
 
-from app.schemas.comparison import (
-    ComparisonDifferential,
-    ComparisonPresetsResponse,
-    ComparisonResponse,
-)
-from app.schemas.observation import NormalizedObservation, PollutantType
+from app.schemas.comparison import ComparisonPresetsResponse, ComparisonResponse
 from app.services.comparison_service import ComparisonService
 
 logger = logging.getLogger(__name__)
@@ -49,8 +44,7 @@ async def compare_stations(
         )
 
     resolution = await comparison_service.resolve(ids)
-    observations: list[NormalizedObservation] = resolution.observations
-    if len(observations) < 2:
+    if len(resolution.observations) < 2:
         unresolved = ", ".join(resolution.unresolved_ids) or "none"
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -60,60 +54,4 @@ async def compare_stations(
             ),
         )
 
-    differential: ComparisonDifferential | None = None
-    valid_aqi_obs = [o for o in observations if o.calculated_aqi is not None]
-    if len(valid_aqi_obs) >= 2:
-        sorted_by_aqi = sorted(valid_aqi_obs, key=lambda x: x.calculated_aqi or 0)
-        cleanest = sorted_by_aqi[0]
-        worst = sorted_by_aqi[-1]
-        aqi_diff = (worst.calculated_aqi or 0) - (cleanest.calculated_aqi or 0)
-
-        def pm25(observation) -> float:
-            reading = observation.readings.get(PollutantType.PM2_5.value)
-            return reading.value if reading else 0.0
-
-        pm25_diff = round(pm25(worst) - pm25(cleanest), 1)
-        basis_label = {
-            "live_station": "Live stations",
-            "coordinate_estimate": "Grid estimates",
-            "mixed": "Mixed sources",
-        }[resolution.basis]
-        summary = (
-            f"{basis_label}: {cleanest.station.station_name} reports cleaner air "
-            f"({cleanest.calculated_aqi} AQI) compared to "
-            f"{worst.station.station_name} ({worst.calculated_aqi} AQI), "
-            f"with an AQI difference of {aqi_diff} points."
-        )
-        differential = ComparisonDifferential(
-            cleanest_station_id=cleanest.station.station_id,
-            cleanest_station_name=cleanest.station.station_name,
-            most_polluted_station_id=worst.station.station_id,
-            most_polluted_station_name=worst.station.station_name,
-            aqi_difference=aqi_diff,
-            pm25_difference_ug_m3=pm25_diff,
-            summary=summary,
-        )
-
-    message = (
-        "Live CPCB station observations."
-        if resolution.basis == "live_station"
-        else (
-            "Coordinate-grid estimates at registered locations, not physical station observations."
-            if resolution.basis == "coordinate_estimate"
-            else "Mixed live stations and coordinate-grid estimates."
-        )
-    )
-    if resolution.unresolved_ids:
-        message += f" Unresolved IDs: {', '.join(resolution.unresolved_ids)}."
-
-    return ComparisonResponse(
-        success=True,
-        stations_count=len(observations),
-        observations=observations,
-        differential=differential,
-        basis=resolution.basis,
-        source=resolution.source,
-        requested_ids=ids,
-        unresolved_ids=resolution.unresolved_ids,
-        message=message,
-    )
+    return comparison_service.build_response(ids, resolution)

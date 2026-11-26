@@ -63,8 +63,8 @@ class OpenMeteoAdapter(AirQualityAdapter):
 
                 data = resp.json()
                 return self._parse_response(data, latitude, longitude)
-        except Exception as e:
-            logger.error("OpenMeteo fetch failed: %s", str(e))
+        except (httpx.HTTPError, TimeoutError, ValueError, KeyError, TypeError) as e:
+            logger.error("OpenMeteo fetch failed (%s): %s", type(e).__name__, str(e))
             return None
 
     async def search_stations(

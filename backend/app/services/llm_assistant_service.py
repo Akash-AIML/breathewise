@@ -1,7 +1,7 @@
 import asyncio
 import logging
 
-import httpx  # noqa: F401 — retained as the monkeypatch target for provider failover tests
+import httpx
 
 from app.core.config import settings
 from app.core.policy_engine import (
@@ -96,23 +96,19 @@ class LLMAssistantService:
         # Step 4: Deterministic Fallback Engine (Guaranteed zero-failure path)
         return self._generate_deterministic_fallback(query, observation, assessment, plan, profile)
 
-    async def _call_server_llm(
+    def _build_system_prompt(
         self,
-        query: str,
         obs: NormalizedObservation,
         assessment: EnvironmentalAssessment,
         plan: PersonalizedPlan,
-        profile: HouseholdProfile,
-        history: list | None = None,
-    ) -> ExplanationResponse | None:
-        """
-        Attempts structured JSON completion via Groq or Gemini server-side APIs.
-        Validates output strictly with Pydantic.
-        """
-        if not self.groq_api_key and not self.gemini_api_key:
-            return None
-
-        # Build grounded system prompt with approved actions
+        history: list | None,
+    ) -> str:
+        approved_lines = "\n".join(
+            f"- [{item.time_of_day}] {item.title}: {item.action} (Evidence: {item.supporting_evidence})"
+            for item in plan.morning_recommendations
+            + plan.afternoon_recommendations
+            + plan.evening_recommendations
+        )
         system_prompt = (
             "You are BreatheWise, an evidence-based urban air quality assistant for Indian families. "
             "You MUST explain the pre-calculated, approved recommendations provided below. "
@@ -130,17 +126,8 @@ class LLMAssistantService:
             f"- Dominant Pollutant: {self._label(obs.dominant_pollutant)}\n"
             f"- Risk Classification: {assessment.risk_level.value}\n"
             f"- Provider: {obs.provider}\n\n"
-            "APPROVED RECOMMENDATIONS:\n"
-            + "\n".join(
-                [
-                    f"- [{item.time_of_day}] {item.title}: {item.action} (Evidence: {item.supporting_evidence})"
-                    for item in plan.morning_recommendations
-                    + plan.afternoon_recommendations
-                    + plan.evening_recommendations
-                ]
-            )
+            f"APPROVED RECOMMENDATIONS:\n{approved_lines}"
         )
-
         if history:
             safe_turns = [
                 f"- {t.role.upper()}: {t.content}"
@@ -149,49 +136,70 @@ class LLMAssistantService:
             ]
             if safe_turns:
                 system_prompt += "\n\nRECENT CONVERSATION CONTEXT:\n" + "\n".join(safe_turns)
+        return system_prompt
 
+    async def _run_gemini_chain(
+        self,
+        query: str,
+        system_prompt: str,
+        obs: NormalizedObservation,
+        assessment: EnvironmentalAssessment,
+        approved_actions: list[str],
+    ) -> ExplanationResponse | None:
+        for model in self._gemini_model_chain():
+            try:
+                result = await self._call_gemini(
+                    query, system_prompt, obs, assessment, approved_actions, model
+                )
+            except _LLMPermanentError:
+                logger.warning("Gemini key rejected; stopping model failover chain.")
+                return None
+            except (httpx.HTTPError, TimeoutError, ValueError, KeyError, TypeError) as exc:
+                logger.warning(
+                    "Gemini model %s failed (%s); trying next model.",
+                    model,
+                    type(exc).__name__,
+                )
+                continue
+            if result is not None:
+                logger.info("LLM explanation generated with %s.", model)
+                return result
+            logger.warning("Gemini model %s returned unusable output; trying next model.", model)
+        return None
+
+    async def _call_server_llm(
+        self,
+        query: str,
+        obs: NormalizedObservation,
+        assessment: EnvironmentalAssessment,
+        plan: PersonalizedPlan,
+        profile: HouseholdProfile,
+        history: list | None = None,
+    ) -> ExplanationResponse | None:
+        """Attempt structured JSON completion via Gemini or Groq server-side APIs."""
+        if not self.groq_api_key and not self.gemini_api_key:
+            return None
+
+        system_prompt = self._build_system_prompt(obs, assessment, plan, history)
         approved_actions = self._approved_actions(plan)
         try:
             async with asyncio.timeout(settings.LLM_REQUEST_BUDGET_SECONDS):
                 if self.gemini_api_key:
-                    for model in self._gemini_model_chain():
-                        try:
-                            result = await self._call_gemini(
-                                query, system_prompt, obs, assessment, approved_actions, model
-                            )
-                        except _LLMPermanentError:
-                            logger.warning("Gemini key rejected; stopping model failover chain.")
-                            break
-                        except Exception as exc:
-                            # Log the exception type only: credentials are never included
-                            # in upstream URLs or payloads, and must never reach logs.
-                            logger.warning(
-                                "Gemini model %s failed (%s); trying next model.",
-                                model,
-                                type(exc).__name__,
-                            )
-                            continue
-                        if result is not None:
-                            logger.info("LLM explanation generated with %s.", model)
-                            return result
-                        logger.warning(
-                            "Gemini model %s returned unusable output; trying next model.", model
-                        )
-
-                # Groq remains an optional last resort, after the configured free-tier chain.
+                    result = await self._run_gemini_chain(
+                        query, system_prompt, obs, assessment, approved_actions
+                    )
+                    if result is not None:
+                        return result
                 if self.groq_api_key:
                     return await self._call_groq(
                         query, system_prompt, obs, assessment, approved_actions
                     )
         except TimeoutError:
             logger.warning("LLM chain exceeded its time budget; invoking deterministic fallback.")
-            return None
-        except Exception as exc:
+        except (httpx.HTTPError, ValueError, KeyError, TypeError) as exc:
             logger.warning(
                 "External LLM API call failed (%s); invoking fallback.", type(exc).__name__
             )
-            return None
-
         return None
 
     @staticmethod

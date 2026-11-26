@@ -9,8 +9,10 @@ POST /api/v1/assistant/chat
 
 import logging
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 
+from app.adapters.cpcb_transport import CPCBProviderError
 from app.schemas.assistant import ChatQueryRequest, ExplanationResponse
 from app.schemas.profile import HouseholdProfile
 from app.services.air_quality_service import AirQualityService
@@ -64,8 +66,10 @@ async def chat(
             latitude=request_body.lat,
             longitude=request_body.lon,
         )
-    except Exception as exc:
-        logger.error("Air quality fetch failed during assistant query: %s", exc)
+    except (httpx.HTTPError, TimeoutError, CPCBProviderError, ValueError, RuntimeError) as exc:
+        logger.error(
+            "Air quality fetch failed during assistant query (%s): %s", type(exc).__name__, exc
+        )
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=(

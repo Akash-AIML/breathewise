@@ -2,116 +2,102 @@ from app.schemas.profile import HouseholdProfile
 from app.schemas.recommendation import RecommendationItem
 
 
+def _morning_activity_item(aqi: int | None, is_vulnerable: bool) -> RecommendationItem:
+    if aqi is None:
+        return RecommendationItem(
+            id="rec_morn_aqi_unavailable",
+            category="planner",
+            title="Hold Strenuous Morning Outdoor Activity",
+            time_of_day="morning",
+            action="Use an indoor routine until validated AQI is available; do not assume the air is safe.",
+            priority="high" if is_vulnerable else "medium",
+            reason="Official CPCB AQI could not be established from the available telemetry.",
+            supporting_evidence="CPCB data-sufficiency rule requires at least three valid pollutants including PM2.5 or PM10.",
+            expected_impact="positive_exposure_reduction",
+            limitations="Re-check validated telemetry before resuming outdoor exertion.",
+        )
+    if aqi > 200:
+        return RecommendationItem(
+            id="rec_morn_exercise_cancel",
+            category="planner",
+            title="Shift Morning Workouts Indoors",
+            time_of_day="morning",
+            action="Avoid outdoor jogging, brisk walking, or sports before 9:00 AM.",
+            priority="critical" if is_vulnerable else "high",
+            reason="Cool morning ground air traps vehicular exhaust and smoke under a thermal inversion layer.",
+            supporting_evidence="CPCB diurnal profiles show peak PM2.5 concentrations occur between 6:00 AM and 8:30 AM in urban centers.",
+            expected_impact="positive_exposure_reduction",
+            limitations="Requires access to indoor exercise space.",
+        )
+    if aqi > 100:
+        return RecommendationItem(
+            id="rec_morn_exercise_moderate",
+            category="planner",
+            title="Moderate Intensity Morning Routine",
+            time_of_day="morning",
+            action="Keep workouts to light intensity and conclude before heavy morning traffic begins.",
+            priority="medium",
+            reason="Moderate particulate levels warrant avoiding heavy cardiac/respiratory exertion outdoors.",
+            supporting_evidence="Exercise increases respiration volume from 6 L/min to over 40 L/min.",
+            expected_impact="positive_exposure_reduction",
+        )
+    return RecommendationItem(
+        id="rec_morn_clean_air",
+        category="planner",
+        title="Favorable Morning Air Window",
+        time_of_day="morning",
+        action="Take advantage of acceptable morning air quality for outdoor walking, exercise, or natural home airing.",
+        priority="low" if not is_vulnerable else "medium",
+        reason="Current ambient particulate levels are within national ambient standards.",
+        supporting_evidence="National Ambient Air Quality Standards (NAAQS) compliance threshold.",
+        expected_impact="balanced",
+    )
+
+
+def _morning_children_item(aqi: int | None) -> RecommendationItem:
+    if aqi is None:
+        return RecommendationItem(
+            id="rec_morn_school_unknown",
+            category="protective",
+            title="Confirm AQI Before Children's Outdoor Play",
+            time_of_day="morning",
+            action="Keep children's outdoor play optional until validated AQI is available; follow school and official advisories.",
+            priority="high",
+            reason="Children are vulnerable and current air quality has not been validated.",
+            supporting_evidence="WHO guidelines advise reducing children's exposure when air quality is uncertain or degraded.",
+            expected_impact="positive_exposure_reduction",
+        )
+    if aqi > 150:
+        return RecommendationItem(
+            id="rec_morn_school_commute",
+            category="protective",
+            title="Child School Commute Protection",
+            time_of_day="morning",
+            action="Ensure children wear child-sized N95 masks while waiting at bus stops or riding open school vans.",
+            priority="high",
+            reason="Children have narrower airways and breathe more air per kilogram of body weight than adults.",
+            supporting_evidence="World Health Organization (WHO) Guidelines on Air Pollution and Child Health.",
+            expected_impact="positive_exposure_reduction",
+        )
+    return RecommendationItem(
+        id="rec_morn_school_safe",
+        category="protective",
+        title="Safe Outdoor Play & School Transit",
+        time_of_day="morning",
+        action="Outdoor activities and school recess can proceed normally under current ambient quality.",
+        priority="low",
+        reason="Particulate levels are safe for unrestricted outdoor physical activity for children.",
+        supporting_evidence="WHO Global Air Quality Guidelines.",
+        expected_impact="balanced",
+    )
+
+
 def _build_morning_recommendations(
     aqi: int | None, profile: HouseholdProfile, is_vulnerable: bool
 ) -> list[RecommendationItem]:
-    morning_items: list[RecommendationItem] = []
-
-    # --- MORNING RECOMMENDATIONS ---
-    # Morning is typically characterized by surface temperature inversion and stagnant emissions in Indian cities
-    if aqi is None:
-        morning_items.append(
-            RecommendationItem(
-                id="rec_morn_aqi_unavailable",
-                category="planner",
-                title="Hold Strenuous Morning Outdoor Activity",
-                time_of_day="morning",
-                action="Use an indoor routine until validated AQI is available; do not assume the air is safe.",
-                priority="high" if is_vulnerable else "medium",
-                reason="Official CPCB AQI could not be established from the available telemetry.",
-                supporting_evidence="CPCB data-sufficiency rule requires at least three valid pollutants including PM2.5 or PM10.",
-                expected_impact="positive_exposure_reduction",
-                limitations="Re-check validated telemetry before resuming outdoor exertion.",
-            )
-        )
-    elif aqi > 200:
-        morning_items.append(
-            RecommendationItem(
-                id="rec_morn_exercise_cancel",
-                category="planner",
-                title="Shift Morning Workouts Indoors",
-                time_of_day="morning",
-                action="Avoid outdoor jogging, brisk walking, or sports before 9:00 AM.",
-                priority="critical" if is_vulnerable else "high",
-                reason="Cool morning ground air traps vehicular exhaust and smoke under a thermal inversion layer.",
-                supporting_evidence="CPCB diurnal profiles show peak PM2.5 concentrations occur between 6:00 AM and 8:30 AM in urban centers.",
-                expected_impact="positive_exposure_reduction",
-                limitations="Requires access to indoor exercise space.",
-            )
-        )
-    elif aqi > 100:
-        morning_items.append(
-            RecommendationItem(
-                id="rec_morn_exercise_moderate",
-                category="planner",
-                title="Moderate Intensity Morning Routine",
-                time_of_day="morning",
-                action="Keep workouts to light intensity and conclude before heavy morning traffic begins.",
-                priority="medium",
-                reason="Moderate particulate levels warrant avoiding heavy cardiac/respiratory exertion outdoors.",
-                supporting_evidence="Exercise increases respiration volume from 6 L/min to over 40 L/min.",
-                expected_impact="positive_exposure_reduction",
-            )
-        )
-    else:
-        morning_items.append(
-            RecommendationItem(
-                id="rec_morn_clean_air",
-                category="planner",
-                title="Favorable Morning Air Window",
-                time_of_day="morning",
-                action="Take advantage of acceptable morning air quality for outdoor walking, exercise, or natural home airing.",
-                priority="low" if not is_vulnerable else "medium",
-                reason="Current ambient particulate levels are within national ambient standards.",
-                supporting_evidence="National Ambient Air Quality Standards (NAAQS) compliance threshold.",
-                expected_impact="balanced",
-            )
-        )
-
-    # Vulnerability check for school children
+    morning_items: list[RecommendationItem] = [_morning_activity_item(aqi, is_vulnerable)]
     if profile.has_children:
-        if aqi is None:
-            morning_items.append(
-                RecommendationItem(
-                    id="rec_morn_school_unknown",
-                    category="protective",
-                    title="Confirm AQI Before Children's Outdoor Play",
-                    time_of_day="morning",
-                    action="Keep children's outdoor play optional until validated AQI is available; follow school and official advisories.",
-                    priority="high",
-                    reason="Children are vulnerable and current air quality has not been validated.",
-                    supporting_evidence="WHO guidelines advise reducing children's exposure when air quality is uncertain or degraded.",
-                    expected_impact="positive_exposure_reduction",
-                )
-            )
-        elif aqi > 150:
-            morning_items.append(
-                RecommendationItem(
-                    id="rec_morn_school_commute",
-                    category="protective",
-                    title="Child School Commute Protection",
-                    time_of_day="morning",
-                    action="Ensure children wear child-sized N95 masks while waiting at bus stops or riding open school vans.",
-                    priority="high",
-                    reason="Children have narrower airways and breathe more air per kilogram of body weight than adults.",
-                    supporting_evidence="World Health Organization (WHO) Guidelines on Air Pollution and Child Health.",
-                    expected_impact="positive_exposure_reduction",
-                )
-            )
-        else:
-            morning_items.append(
-                RecommendationItem(
-                    id="rec_morn_school_safe",
-                    category="protective",
-                    title="Safe Outdoor Play & School Transit",
-                    time_of_day="morning",
-                    action="Outdoor activities and school recess can proceed normally under current ambient quality.",
-                    priority="low",
-                    reason="Particulate levels are safe for unrestricted outdoor physical activity for children.",
-                    supporting_evidence="WHO Global Air Quality Guidelines.",
-                    expected_impact="balanced",
-                )
-            )
+        morning_items.append(_morning_children_item(aqi))
 
     # Commute suggestion for two-wheeler / bus commuters
     if profile.commute_method in ("two_wheeler", "bus", "walking_cycling"):

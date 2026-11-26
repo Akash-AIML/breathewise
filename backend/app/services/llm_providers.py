@@ -85,6 +85,22 @@ async def call_groq(
         return service._build_grounded_explanation(parsed, obs, assessment, approved_actions)
 
 
+def _extract_gemini_text(data: dict) -> str | None:
+    """Return the final non-thought text part from a Gemini/Gemma response."""
+    candidates = data.get("candidates") or []
+    if not candidates:
+        return None
+    parts = (candidates[0].get("content") or {}).get("parts") or []
+    texts = [
+        text
+        for part in parts
+        if isinstance(part, dict)
+        and not part.get("thought")
+        and isinstance((text := part.get("text")), str)
+    ]
+    return texts[-1] if texts else None
+
+
 async def call_gemini(
     service: LLMAssistantService,
     query: str,
@@ -97,8 +113,6 @@ async def call_gemini(
     """One model in the configured free-tier chain. Never logs the API key."""
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
     headers = {"x-goog-api-key": service.gemini_api_key, "Content-Type": "application/json"}
-    # Gemma 4 models emit a long `thought` part before the JSON answer, so
-    # they need a larger output budget and a longer read timeout.
     is_gemma = model.startswith("gemma-")
     payload = {
         "systemInstruction": {"parts": [{"text": system_prompt}]},
@@ -123,23 +137,8 @@ async def call_gemini(
             )
             return None
 
-        data = resp.json()
-        candidates = data.get("candidates") or []
-        if not candidates:
-            return None
-        parts = (candidates[0].get("content") or {}).get("parts") or []
-        # Thinking models (Gemma 4, Gemini 3) put reasoning in parts flagged
-        # `thought: true`. Only the final non-thought text part is an answer.
-        texts = [
-            text
-            for part in parts
-            if isinstance(part, dict)
-            and not part.get("thought")
-            and isinstance((text := part.get("text")), str)
-        ]
-        if not texts:
-            return None
-        parsed = service._parse_json_object(texts[-1])
+        text = _extract_gemini_text(resp.json())
+        parsed = service._parse_json_object(text) if text else None
         if parsed is None:
             return None
         return service._build_grounded_explanation(parsed, obs, assessment, approved_actions)

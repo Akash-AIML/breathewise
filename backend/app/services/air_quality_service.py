@@ -141,18 +141,27 @@ class AirQualityService:
                 observation.notes = f"{observation.notes}; {note}" if observation.notes else note
         return observation
 
+    async def _fetch_from_tiers(
+        self, latitude: float, longitude: float
+    ) -> NormalizedObservation | None:
+        tiers = (
+            ("Tier 1 CPCB", self.cpcb_adapter),
+            ("Tier 2 OpenAQ", self.openaq_adapter),
+            ("Tier 3 Open-Meteo", self.openmeteo_adapter),
+        )
+        for label, adapter in tiers:
+            try:
+                observation = await adapter.fetch_by_coordinates(latitude, longitude)
+                if observation is not None:
+                    return observation
+            except Exception as exc:
+                logger.warning("%s failed (%s): %s", label, type(exc).__name__, str(exc))
+        return None
+
     async def get_air_quality_for_coordinates(
         self, latitude: float, longitude: float, bypass_cache: bool = False
     ) -> NormalizedObservation | None:
-        """
-        Coordinates-aware air quality retrieval with strict multi-source fallback:
-        1. In-memory TTL cache lookup
-        2. CPCB OGD adapter (if configured and available)
-        3. OpenAQ v3 adapter (if configured and available)
-        4. Open-Meteo High-Resolution CAMS adapter (verified real-time live data)
-        5. Returns None (Honest unavailable state) if all providers fail
-        """
-        # Validate coordinates bounds
+        """Coordinates-aware air quality retrieval with strict multi-source fallback."""
         if not (-90.0 <= latitude <= 90.0 and -180.0 <= longitude <= 180.0):
             raise ValueError(f"Invalid coordinates: latitude={latitude}, longitude={longitude}")
 
@@ -161,53 +170,24 @@ class AirQualityService:
             entry = self._cache[cache_key]
             if not entry.is_expired():
                 logger.debug("Serving air quality from cache for %s", cache_key)
-                # Return a copy: callers must not be able to mutate shared cache
-                # state, and staleness must be re-evaluated on every hit.
                 return self.check_stale_status(entry.observation.model_copy(deep=True))
-            # Delete expired entries instead of leaving them to accumulate.
             self._cache.pop(cache_key, None)
 
-        observation: NormalizedObservation | None = None
-
-        # Tier 1: CPCB (Primary Official Source)
-        try:
-            observation = await self.cpcb_adapter.fetch_by_coordinates(latitude, longitude)
-        except Exception as e:
-            logger.warning("Tier 1 CPCB failed: %s", str(e))
-
-        # Tier 2: OpenAQ (Secondary Source)
+        observation = await self._fetch_from_tiers(latitude, longitude)
         if not observation:
-            try:
-                observation = await self.openaq_adapter.fetch_by_coordinates(latitude, longitude)
-            except Exception as e:
-                logger.warning("Tier 2 OpenAQ failed: %s", str(e))
+            return None
 
-        # Tier 3: Open-Meteo Environmental Grid (Verified Real-Time Source)
-        if not observation:
-            try:
-                observation = await self.openmeteo_adapter.fetch_by_coordinates(latitude, longitude)
-            except Exception as e:
-                logger.warning("Tier 3 Open-Meteo failed: %s", str(e))
+        observation = self.check_stale_status(observation)
+        if observation.station.distance_km is None:
+            observation.station.distance_km = haversine_distance_km(
+                latitude, longitude, observation.station.latitude, observation.station.longitude
+            )
 
-        if observation:
-            # Check for stale timestamp
-            observation = self.check_stale_status(observation)
-
-            # Calculate distance to station if physical coordinates exist
-            if observation.station.distance_km is None:
-                observation.station.distance_km = haversine_distance_km(
-                    latitude, longitude, observation.station.latitude, observation.station.longitude
-                )
-
-            # Store an immutable-to-callers copy in cache
-            expires_at = datetime.now(UTC) + timedelta(seconds=settings.CACHE_TTL_SECONDS)
-            self._cache[cache_key] = CacheEntry(observation.model_copy(deep=True), expires_at)
-            prune_expired(self._cache, lambda entry: entry.expires_at)
-            enforce_limit(self._cache, settings.CACHE_MAX_ENTRIES)
-            return observation
-
-        # Honest unavailable state: return None
-        return None
+        expires_at = datetime.now(UTC) + timedelta(seconds=settings.CACHE_TTL_SECONDS)
+        self._cache[cache_key] = CacheEntry(observation.model_copy(deep=True), expires_at)
+        prune_expired(self._cache, lambda entry: entry.expires_at)
+        enforce_limit(self._cache, settings.CACHE_MAX_ENTRIES)
+        return observation
 
     def search_nearby_stations(
         self, latitude: float, longitude: float, max_distance_km: float = 50.0

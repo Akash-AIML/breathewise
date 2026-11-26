@@ -92,8 +92,8 @@ class OpenAQAdapter(AirQualityAdapter):
 
                 meas_data = meas_resp.json().get("results", [])
                 return self._parse_openaq_data(loc, meas_data, latitude, longitude)
-        except Exception as e:
-            logger.error("OpenAQ fetch failed: %s", str(e))
+        except (httpx.HTTPError, TimeoutError, ValueError, KeyError, TypeError) as e:
+            logger.error("OpenAQ fetch failed (%s): %s", type(e).__name__, str(e))
             return None
 
     async def search_stations(
@@ -127,8 +127,8 @@ class OpenAQAdapter(AirQualityAdapter):
                         )
                     )
                 return stations
-        except Exception as e:
-            logger.error("OpenAQ search stations error: %s", str(e))
+        except (httpx.HTTPError, TimeoutError, ValueError, KeyError, TypeError) as e:
+            logger.error("OpenAQ search stations error (%s): %s", type(e).__name__, str(e))
             return []
 
     def _parse_openaq_data(

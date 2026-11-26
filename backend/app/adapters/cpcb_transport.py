@@ -46,6 +46,22 @@ def redact_secrets(value: object) -> str:
     return _SECRET_QUERY.sub(r"\1" + REDACTED, str(value))
 
 
+def _parse_cpcb_page_response(response: httpx.Response) -> tuple[list[dict[str, Any]], int | None]:
+    """Validate and extract records and total count from a CPCB HTTP 200 response."""
+    try:
+        payload = response.json()
+    except ValueError:
+        raise CPCBResponseError("CPCB provider returned invalid JSON.") from None
+
+    if not isinstance(payload, dict):
+        raise CPCBResponseError("CPCB provider returned a non-object payload.")
+    records = payload.get("records")
+    if not isinstance(records, list):
+        raise CPCBResponseError("CPCB provider response has no records list.")
+    total = payload.get("total")
+    return records, int(total) if isinstance(total, (int, str)) and str(total).isdigit() else None
+
+
 class CPCBTransportMixin:
     """HTTP requests, caching, and circuit-breaker helpers for CPCBAdapter."""
 
@@ -76,6 +92,49 @@ class CPCBTransportMixin:
             )
         )
 
+    @staticmethod
+    def _retry_delay(attempt: int, retry_after: str = "") -> float:
+        if retry_after.isdigit():
+            return min(float(retry_after), 10.0)
+        return float(settings.CPCB_BACKOFF_BASE_SECONDS * (2**attempt))
+
+    async def _send_page_request(
+        self,
+        client: httpx.AsyncClient,
+        url: str,
+        params: dict[str, Any],
+        attempt: int,
+        max_attempts: int,
+    ) -> httpx.Response | None:
+        try:
+            response = await client.get(url, params=params)
+        except httpx.TimeoutException:
+            if attempt + 1 < max_attempts:
+                await asyncio.sleep(self._retry_delay(attempt))
+                return None
+            raise CPCBTemporaryError("CPCB provider timed out.") from None
+        except httpx.TransportError:
+            if attempt + 1 < max_attempts:
+                await asyncio.sleep(self._retry_delay(attempt))
+                return None
+            raise CPCBTemporaryError("CPCB provider network failure.") from None
+
+        if response.status_code == 429:
+            if attempt + 1 < max_attempts:
+                await asyncio.sleep(
+                    self._retry_delay(attempt, response.headers.get("Retry-After", ""))
+                )
+                return None
+            raise CPCBRateLimitError("CPCB provider rate limit exceeded.")
+        if response.status_code in {500, 502, 503, 504}:
+            if attempt + 1 < max_attempts:
+                await asyncio.sleep(self._retry_delay(attempt))
+                return None
+            raise CPCBTemporaryError(f"CPCB provider HTTP {response.status_code}.")
+        if response.status_code != 200:
+            raise CPCBProviderError(f"CPCB provider HTTP {response.status_code}.")
+        return response
+
     async def _request_page(
         self, params: dict[str, Any]
     ) -> tuple[list[dict[str, Any]], int | None]:
@@ -89,60 +148,13 @@ class CPCBTransportMixin:
 
         async with self._client() as client:
             for attempt in range(max_attempts):
-                try:
-                    response = await client.get(url, params=request_params)
-                except httpx.TimeoutException:
-                    if attempt + 1 < max_attempts:
-                        await asyncio.sleep(settings.CPCB_BACKOFF_BASE_SECONDS * (2**attempt))
-                        continue
-                    raise CPCBTemporaryError("CPCB provider timed out.") from None
-                except httpx.TransportError:
-                    if attempt + 1 < max_attempts:
-                        await asyncio.sleep(settings.CPCB_BACKOFF_BASE_SECONDS * (2**attempt))
-                        continue
-                    raise CPCBTemporaryError("CPCB provider network failure.") from None
+                response = await self._send_page_request(
+                    client, url, request_params, attempt, max_attempts
+                )
+                if response is not None:
+                    return _parse_cpcb_page_response(response)
 
-                if response.status_code == 429:
-                    if attempt + 1 < max_attempts:
-                        retry_after = response.headers.get("Retry-After", "")
-                        delay = (
-                            float(retry_after)
-                            if retry_after.isdigit()
-                            else settings.CPCB_BACKOFF_BASE_SECONDS * (2**attempt)
-                        )
-                        await asyncio.sleep(min(delay, 10.0))
-                        continue
-                    raise CPCBRateLimitError("CPCB provider rate limit exceeded.")
-
-                if response.status_code in {500, 502, 503, 504}:
-                    if attempt + 1 < max_attempts:
-                        await asyncio.sleep(settings.CPCB_BACKOFF_BASE_SECONDS * (2**attempt))
-                        continue
-                    raise CPCBTemporaryError(f"CPCB provider HTTP {response.status_code}.")
-
-                if response.status_code in {400, 401, 403}:
-                    # Permanent failures must not be retried.
-                    raise CPCBProviderError(
-                        f"CPCB provider rejected the request (HTTP {response.status_code})."
-                    )
-
-                if response.status_code != 200:
-                    raise CPCBProviderError(f"CPCB provider HTTP {response.status_code}.")
-
-                try:
-                    payload = response.json()
-                except ValueError:
-                    raise CPCBResponseError("CPCB provider returned invalid JSON.") from None
-
-                if not isinstance(payload, dict):
-                    raise CPCBResponseError("CPCB provider returned a non-object payload.")
-                records = payload.get("records")
-                if not isinstance(records, list):
-                    raise CPCBResponseError("CPCB provider response has no records list.")
-                total = payload.get("total")
-                return records, int(total) if isinstance(total, (int, str)) and str(
-                    total
-                ).isdigit() else None
+        raise CPCBTemporaryError("CPCB provider retries exhausted.")
 
         raise CPCBTemporaryError("CPCB provider request exhausted retries.")
 
