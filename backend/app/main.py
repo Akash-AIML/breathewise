@@ -1,4 +1,5 @@
 import logging
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 
@@ -23,7 +24,7 @@ install_secret_redaction()
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     logger.info("Starting %s in %s mode...", settings.PROJECT_NAME, settings.ENVIRONMENT)
     yield
     logger.info("Shutting down %s...", settings.PROJECT_NAME)
@@ -66,7 +67,9 @@ app.add_middleware(
 
 # 3. Global Exception Handlers
 @app.exception_handler(RequestValidationError)
-async def validation_exception_handler(request: Request, exc: RequestValidationError):
+async def validation_exception_handler(
+    request: Request, exc: RequestValidationError
+) -> JSONResponse:
     errors = [
         ErrorDetail(
             field=".".join([str(loc) for loc in err.get("loc", []) if loc != "body"]),
@@ -86,7 +89,7 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
 
 
 @app.exception_handler(HTTPException)
-async def http_exception_handler(request: Request, exc: HTTPException):
+async def http_exception_handler(request: Request, exc: HTTPException) -> JSONResponse:
     return JSONResponse(
         status_code=exc.status_code,
         content=ErrorResponse(
@@ -98,7 +101,7 @@ async def http_exception_handler(request: Request, exc: HTTPException):
 
 
 @app.exception_handler(Exception)
-async def unhandled_exception_handler(request: Request, exc: Exception):
+async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
     logger.error("Unhandled exception on %s: %s", request.url.path, str(exc), exc_info=True)
     return JSONResponse(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -112,7 +115,7 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
 
 # 4. Top-level Root & Health Route
 @app.get("/health", response_model=HealthResponse, tags=["Health"])
-async def root_health():
+async def root_health() -> HealthResponse:
     return HealthResponse(
         status="healthy",
         version="0.1.0",

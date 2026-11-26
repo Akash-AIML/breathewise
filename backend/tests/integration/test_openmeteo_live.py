@@ -6,6 +6,7 @@ from app.adapters.openmeteo import OpenMeteoAdapter
 from app.schemas.observation import DataQualityStatus, PollutantType
 
 pytestmark = [
+    pytest.mark.integration,
     pytest.mark.live,
     pytest.mark.skipif(
         os.getenv("RUN_LIVE_TESTS") != "1",

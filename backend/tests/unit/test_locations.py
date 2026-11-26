@@ -46,6 +46,21 @@ async def test_reverse_endpoint_returns_tier2_locality(monkeypatch):
     assert response.json()["place"]["name"] == "Sathyamangalam"
 
 
+def test_geocoding_sanitizer_rejects_boolean_coordinates():
+    assert (
+        locations._sanitize_geocoding_result(
+            {"name": "Nowhere", "latitude": True, "longitude": 77.2793}
+        )
+        is None
+    )
+    assert (
+        locations._sanitize_geocoding_result(
+            {"name": "Nowhere", "latitude": 11.4953, "longitude": False}
+        )
+        is None
+    )
+
+
 def test_reverse_parser_prefers_town_over_county():
     payload = {
         "name": "Sathyamangalam",

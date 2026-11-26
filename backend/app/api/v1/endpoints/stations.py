@@ -10,7 +10,7 @@ air_quality_service = AirQualityService()
 
 
 @router.get("/stations", response_model=StationsResponse)
-async def list_or_search_stations(
+async def list_or_search_stations(  # noqa: PLR0913, PLR0917 - fixed FastAPI query surface
     query: str | None = Query(
         None, max_length=100, description="City, state or station search query"
     ),

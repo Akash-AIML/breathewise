@@ -10,11 +10,9 @@
  */
 import { test, expect } from "@playwright/test";
 
-const TARGET_URL = process.env.E2E_BASE_URL || "https://aqi.akashg.me";
-
 test.describe("BreatheWise End-to-End", () => {
   test("navigates core modules on desktop and verifies keyboard accessibility", async ({ page }) => {
-    await page.goto(TARGET_URL, { waitUntil: "domcontentloaded" });
+    await page.goto("/", { waitUntil: "domcontentloaded" });
     await expect(page.getByRole("heading", { level: 1 })).toContainText("BreatheWise");
 
     // Keyboard tab navigation to Daily Planner
@@ -38,7 +36,7 @@ test.describe("BreatheWise End-to-End", () => {
 
   test("renders cleanly on mobile viewport without horizontal overflow", async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
-    await page.goto(TARGET_URL, { waitUntil: "domcontentloaded" });
+    await page.goto("/", { waitUntil: "domcontentloaded" });
     await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
     const hasOverflow = await page.evaluate(
       () => document.documentElement.scrollWidth > window.innerWidth + 2

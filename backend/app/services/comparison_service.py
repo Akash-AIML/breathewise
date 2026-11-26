@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from functools import partial
 from typing import Literal
 
+from app.adapters.cpcb import CPCBConfigurationError, CPCBProviderError
 from app.schemas.comparison import (
     ComparisonBasis,
     ComparisonCandidate,
@@ -22,6 +23,8 @@ logger = logging.getLogger(__name__)
 LiveBasis = Literal["live_station", "coordinate_estimate"]
 GRID_ID_PREFIX = "grid:"
 GRID_NOTE = "Coordinate-grid estimate at a registered location, not a physical station observation."
+MIN_COMPARISON_STATIONS = 2
+MAX_COMPARISON_STATIONS = 4
 CITY_ALIASES = {
     "delhi": ("delhi",),
     "mumbai": ("mumbai", "bombay"),
@@ -68,7 +71,7 @@ class ComparisonService:
         """Fetch live CPCB observations once; degrade cleanly to grid estimates."""
         try:
             return await self.air_quality.cpcb_adapter.get_station_observations()
-        except Exception as exc:
+        except (CPCBProviderError, CPCBConfigurationError, ValueError, KeyError, TypeError) as exc:
             # Log only the exception type: provider errors can embed credentialed URLs.
             logger.warning(
                 "Live CPCB comparison lookup unavailable (%s); using grid estimates",
@@ -160,36 +163,44 @@ class ComparisonService:
             source="fallback_registry_coordinate_grid",
         )
 
+    def _resolve_live(self, observation: CPCBStationObservation) -> ResolvedObservation:
+        normalized = self.air_quality.cpcb_adapter.to_normalized(
+            observation, observation.latitude, observation.longitude, 0.0
+        )
+        return ResolvedObservation(
+            observation=normalized,
+            basis="live_station",
+            source="CPCB/data.gov.in",
+        )
+
+    async def _resolve_id(
+        self,
+        raw_id: str,
+        live_by_id: dict[str, CPCBStationObservation],
+        grid_by_id: dict[str, ComparisonCandidate],
+        legacy_grid_ids: dict[str, ComparisonCandidate],
+    ) -> ResolvedObservation | None:
+        station_id = raw_id.strip()
+        if station_id in live_by_id:
+            return self._resolve_live(live_by_id[station_id])
+
+        # Legacy IDs without the grid prefix are accepted but never presented as stations.
+        candidate = grid_by_id.get(station_id) or legacy_grid_ids.get(station_id)
+        return await self._resolve_grid_candidate(candidate) if candidate else None
+
     async def resolve(self, ids: list[str]) -> ComparisonResolution:
         live = await self._live_observations()
         live_by_id = {obs.station_id: obs for obs in live}
         grid_candidates = self._grid_candidates()
         grid_by_id = {c.id: c for c in grid_candidates}
-        # Legacy IDs without the grid prefix are accepted but never presented as stations.
         legacy_grid_ids = {c.id.removeprefix(GRID_ID_PREFIX): c for c in grid_candidates}
 
         resolved: list[ResolvedObservation] = []
         unresolved: list[str] = []
         for raw_id in ids:
-            station_id = raw_id.strip()
-            if station_id in live_by_id:
-                obs = live_by_id[station_id]
-                normalized = self.air_quality.cpcb_adapter.to_normalized(
-                    obs, obs.latitude, obs.longitude, 0.0
-                )
-                resolved.append(
-                    ResolvedObservation(
-                        observation=normalized,
-                        basis="live_station",
-                        source="CPCB/data.gov.in",
-                    )
-                )
-                continue
-
-            candidate = grid_by_id.get(station_id) or legacy_grid_ids.get(station_id)
-            item = await self._resolve_grid_candidate(candidate) if candidate else None
+            item = await self._resolve_id(raw_id, live_by_id, grid_by_id, legacy_grid_ids)
             if item is None:
-                unresolved.append(station_id)
+                unresolved.append(raw_id.strip())
             else:
                 resolved.append(item)
 
@@ -239,7 +250,7 @@ def _compute_differential(
     observations: list[NormalizedObservation], basis: ComparisonBasis
 ) -> ComparisonDifferential | None:
     valid_aqi_obs = [o for o in observations if o.calculated_aqi is not None]
-    if len(valid_aqi_obs) < 2:
+    if len(valid_aqi_obs) < MIN_COMPARISON_STATIONS:
         return None
     sorted_by_aqi = sorted(valid_aqi_obs, key=lambda x: x.calculated_aqi or 0)
     cleanest, worst = sorted_by_aqi[0], sorted_by_aqi[-1]
@@ -290,7 +301,7 @@ def _matches_city(candidate: ComparisonCandidate, city_key: str) -> bool:
     return any(alias in text for alias in CITY_ALIASES[city_key])
 
 
-def _make_preset(
+def _make_preset(  # noqa: PLR0913, PLR0917 - explicit preset fields keep call sites readable
     key: str,
     name: str,
     picked: list[ComparisonCandidate],
@@ -298,7 +309,7 @@ def _make_preset(
     basis: LiveBasis,
     source: str,
 ) -> ComparisonPreset | None:
-    if len(picked) < 2 or len({item.id for item in picked}) != len(picked):
+    if len(picked) < MIN_COMPARISON_STATIONS or len({item.id for item in picked}) != len(picked):
         return None
     return ComparisonPreset(
         key=key,
@@ -333,7 +344,7 @@ def _delhi_preset(
     )
 
 
-def _multi_city_preset(
+def _multi_city_preset(  # noqa: PLR0913, PLR0917 - explicit preset fields keep call sites readable
     candidates: list[ComparisonCandidate],
     key: str,
     title: str,

@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import re
+from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
@@ -19,6 +20,11 @@ logging.getLogger("httpx").setLevel(logging.WARNING)
 
 REDACTED = "REDACTED"
 _SECRET_QUERY = re.compile(r"(api-key=)[^&\s]+", re.IGNORECASE)
+
+HTTP_OK = 200
+HTTP_TOO_MANY_REQUESTS = 429
+RETRYABLE_SERVER_ERRORS = frozenset({500, 502, 503, 504})
+CIRCUIT_UNAVAILABLE_REASON = "CPCB provider is temporarily unavailable."
 
 
 class CPCBConfigurationError(RuntimeError):
@@ -58,6 +64,8 @@ def _parse_cpcb_page_response(response: httpx.Response) -> tuple[list[dict[str, 
     records = payload.get("records")
     if not isinstance(records, list):
         raise CPCBResponseError("CPCB provider response has no records list.")
+    # Individual malformed rows are skipped later by parse_records so one bad
+    # row cannot discard otherwise valid observations from the same page.
     total = payload.get("total")
     return records, int(total) if isinstance(total, (int, str)) and str(total).isdigit() else None
 
@@ -119,19 +127,19 @@ class CPCBTransportMixin:
                 return None
             raise CPCBTemporaryError("CPCB provider network failure.") from None
 
-        if response.status_code == 429:
+        if response.status_code == HTTP_TOO_MANY_REQUESTS:
             if attempt + 1 < max_attempts:
                 await asyncio.sleep(
                     self._retry_delay(attempt, response.headers.get("Retry-After", ""))
                 )
                 return None
             raise CPCBRateLimitError("CPCB provider rate limit exceeded.")
-        if response.status_code in {500, 502, 503, 504}:
+        if response.status_code in RETRYABLE_SERVER_ERRORS:
             if attempt + 1 < max_attempts:
                 await asyncio.sleep(self._retry_delay(attempt))
                 return None
             raise CPCBTemporaryError(f"CPCB provider HTTP {response.status_code}.")
-        if response.status_code != 200:
+        if response.status_code != HTTP_OK:
             raise CPCBProviderError(f"CPCB provider HTTP {response.status_code}.")
         return response
 
@@ -156,7 +164,11 @@ class CPCBTransportMixin:
 
         raise CPCBTemporaryError("CPCB provider retries exhausted.")
 
-        raise CPCBTemporaryError("CPCB provider request exhausted retries.")
+    @staticmethod
+    def _page_fingerprint(record: Any) -> str:
+        if not isinstance(record, dict):
+            return f"invalid:{record!r}"
+        return str(sorted((str(k), str(v)) for k, v in record.items()))
 
     async def _fetch_pages(
         self,
@@ -179,7 +191,7 @@ class CPCBTransportMixin:
             if not page:
                 break
             for record in page:
-                fingerprint = str(sorted((str(k), str(v)) for k, v in record.items()))
+                fingerprint = self._page_fingerprint(record)
                 if fingerprint not in seen:
                     seen.add(fingerprint)
                     records.append(record)
@@ -276,23 +288,28 @@ class CPCBTransportMixin:
             return previous
         raise CPCBTemporaryError(reason)
 
-    async def _load_with_fallback(self, key: str, loader) -> Any:
+    def _cached_or_unavailable(self, key: str) -> Any | None:
+        """Return a usable cache entry, or the last valid data while the circuit is open."""
+        cached = self._cached(key)
+        if cached is not None:
+            return cached
+        if self._circuit_is_open():
+            return self._unavailable_or_stale(key, CIRCUIT_UNAVAILABLE_REASON)
+        return None
+
+    async def _load_with_fallback(self, key: str, loader: Callable[[], Awaitable[Any]]) -> Any:
         """Cache + coalesce requests, preserving the last valid data on failure.
 
         A wall-clock budget bounds retries x pagination so a provider outage can
         never hold up the user-facing request or block downstream providers.
         """
-        cached = self._cached(key)
-        if cached is not None:
-            return cached
-        if self._circuit_is_open():
-            return self._unavailable_or_stale(key, "CPCB provider is temporarily unavailable.")
+        ready = self._cached_or_unavailable(key)
+        if ready is not None:
+            return ready
         async with self._lock_for(key):
-            cached = self._cached(key)
-            if cached is not None:
-                return cached
-            if self._circuit_is_open():
-                return self._unavailable_or_stale(key, "CPCB provider is temporarily unavailable.")
+            ready = self._cached_or_unavailable(key)
+            if ready is not None:
+                return ready
             try:
                 async with asyncio.timeout(settings.CPCB_REQUEST_BUDGET_SECONDS):
                     value = await loader()

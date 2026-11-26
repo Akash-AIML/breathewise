@@ -18,6 +18,11 @@ REVERSE_GEOCODING_URL = "https://nominatim.openstreetmap.org/reverse"
 REVERSE_USER_AGENT = "BreatheWise/1.0 (air-quality-assistant)"
 REVERSE_MIN_INTERVAL_SECONDS = 1.1
 REVERSE_CACHE_TTL_SECONDS = 3600
+HTTP_OK = 200
+MIN_NAME_LENGTH = 2
+MAX_GEOCODING_FIELD_LENGTH = 100
+GEOCODING_FIELDS = ("id", "name", "latitude", "longitude", "admin1", "country")
+NUMERIC_GEOCODING_FIELDS = frozenset({"id", "latitude", "longitude"})
 
 _reverse_cache: dict[tuple[float, float], tuple[datetime, dict[str, Any] | None]] = {}
 _reverse_locks: dict[tuple[float, float], asyncio.Lock] = {}
@@ -46,7 +51,7 @@ async def _request_geocoding_payload(name: str) -> Any:
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Location search is temporarily unavailable.",
         ) from exc
-    if response.status_code != 200:
+    if response.status_code != HTTP_OK:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Location search is temporarily unavailable.",
@@ -60,31 +65,38 @@ async def _request_geocoding_payload(name: str) -> Any:
         ) from exc
 
 
+def _is_coordinate_number(value: Any) -> bool:
+    """Booleans are ints in Python but are never valid geographic coordinates."""
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+
+def _sanitize_geocoding_result(item: dict[str, Any]) -> dict[str, Any] | None:
+    """Allowlist and bound one geocoding result, rejecting entries without coordinates."""
+    has_coords = _is_coordinate_number(item.get("latitude")) and _is_coordinate_number(
+        item.get("longitude")
+    )
+    if not has_coords:
+        return None
+    entry: dict[str, Any] = {}
+    for field in GEOCODING_FIELDS:
+        value = item.get(field)
+        if isinstance(value, str):
+            entry[field] = value[:MAX_GEOCODING_FIELD_LENGTH]
+        elif field in NUMERIC_GEOCODING_FIELDS and _is_coordinate_number(value):
+            entry[field] = value
+    return entry if entry.get("name") else None
+
+
 def _sanitize_geocoding_results(payload: Any) -> list[dict[str, Any]]:
     """Keep only allowlisted, bounded geocoding fields."""
     results = payload.get("results") if isinstance(payload, dict) else None
     if not isinstance(results, list):
         return []
-    allowed = ("id", "name", "latitude", "longitude", "admin1", "country")
-    cleaned: list[dict[str, Any]] = []
-    for item in results:
-        if not isinstance(item, dict):
-            continue
-        has_coords = isinstance(item.get("latitude"), (int, float)) and isinstance(
-            item.get("longitude"), (int, float)
-        )
-        if not has_coords:
-            continue
-        entry: dict[str, Any] = {}
-        for field in allowed:
-            value = item.get(field)
-            if isinstance(value, str):
-                entry[field] = value[:100]
-            elif field in ("latitude", "longitude", "id") and isinstance(value, (int, float)):
-                entry[field] = value
-        if entry.get("name"):
-            cleaned.append(entry)
-    return cleaned
+    return [
+        entry
+        for item in results
+        if isinstance(item, dict) and (entry := _sanitize_geocoding_result(item)) is not None
+    ]
 
 
 async def fetch_geocoding(name: str) -> list[dict[str, Any]]:
@@ -99,10 +111,12 @@ async def search_locations(
 ) -> dict[str, Any]:
     """Resolve a place name to exact coordinates through the backend proxy."""
     cleaned_name = name.strip()
-    if len(cleaned_name) < 2:
+    if len(cleaned_name) < MIN_NAME_LENGTH:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Location name must contain at least 2 non-whitespace characters.",
+            detail=(
+                f"Location name must contain at least {MIN_NAME_LENGTH} non-whitespace characters."
+            ),
         )
     results = await fetch_geocoding(cleaned_name)
     return {"results": results}
@@ -139,7 +153,7 @@ def _parse_reverse_payload(payload: Any) -> dict[str, Any] | None:
 
 async def fetch_reverse_geocoding(lat: float, lon: float) -> dict[str, Any] | None:
     """Resolve exact coordinates to a locality name. Never blocks the UI on failure."""
-    global _last_reverse_request
+    global _last_reverse_request  # noqa: PLW0603 - shared module-level pacing state
     key = _reverse_cache_key(lat, lon)
 
     cached = _reverse_cache.get(key)
@@ -181,7 +195,7 @@ async def fetch_reverse_geocoding(lat: float, lon: float) -> dict[str, Any] | No
                         "addressdetails": 1,
                     },
                 )
-            if response.status_code == 200:
+            if response.status_code == HTTP_OK:
                 place = _parse_reverse_payload(response.json())
             else:
                 logger.warning("Reverse geocoding returned HTTP %s.", response.status_code)

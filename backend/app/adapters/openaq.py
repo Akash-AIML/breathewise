@@ -1,4 +1,5 @@
 import logging
+from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any
 
@@ -27,6 +28,15 @@ OPENAQ_PARAM_MAP: dict[str, PollutantType] = {
     "pb": PollutantType.PB,
 }
 
+HTTP_OK = 200
+HTTP_UNAUTHORIZED = 401
+SHORT_AVERAGING_POLLUTANTS = frozenset({PollutantType.CO, PollutantType.O3})
+# OpenAQ reports CO in mass or volume units; CPCB breakpoints require mg/m³.
+CO_UNIT_CONVERSIONS: dict[str, Callable[[float], float]] = {
+    "µg/m³": lambda value: value / 1000.0,
+    "ppm": lambda value: value * 1.145,
+}
+
 
 class OpenAQAdapter(AirQualityAdapter):
     """
@@ -47,6 +57,29 @@ class OpenAQAdapter(AirQualityAdapter):
     @property
     def provider_name(self) -> str:
         return "OpenAQ Global Air Quality Network (v3)"
+
+    @staticmethod
+    def _location_results(response: httpx.Response) -> list[dict[str, Any]] | None:
+        if response.status_code == HTTP_UNAUTHORIZED:
+            logger.warning("OpenAQAdapter: Invalid or missing OpenAQ API key (HTTP 401).")
+            return None
+        if response.status_code != HTTP_OK:
+            logger.warning("OpenAQAdapter: HTTP %s from OpenAQ API", response.status_code)
+            return None
+        results: list[dict[str, Any]] | None = response.json().get("results", [])
+        return results or None
+
+    @classmethod
+    async def _latest_results(
+        cls, client: httpx.AsyncClient, headers: dict[str, str], location_id: Any
+    ) -> list[dict[str, Any]] | None:
+        response = await client.get(
+            f"{cls.BASE_URL}/locations/{location_id}/latest", headers=headers
+        )
+        if response.status_code != HTTP_OK:
+            return None
+        results: list[dict[str, Any]] = response.json().get("results", [])
+        return results
 
     async def fetch_by_coordinates(
         self, latitude: float, longitude: float
@@ -69,28 +102,15 @@ class OpenAQAdapter(AirQualityAdapter):
                 resp = await client.get(
                     f"{self.BASE_URL}/locations", headers=headers, params=params
                 )
-                if resp.status_code == 401:
-                    logger.warning("OpenAQAdapter: Invalid or missing OpenAQ API key (HTTP 401).")
-                    return None
-                if resp.status_code != 200:
-                    logger.warning("OpenAQAdapter: HTTP %s from OpenAQ API", resp.status_code)
-                    return None
-
-                results = resp.json().get("results", [])
+                results = self._location_results(resp)
                 if not results:
                     return None
 
                 loc = results[0]
-                loc_id = loc.get("id")
-
                 # Fetch latest measurements for this location
-                meas_resp = await client.get(
-                    f"{self.BASE_URL}/locations/{loc_id}/latest", headers=headers
-                )
-                if meas_resp.status_code != 200:
+                meas_data = await self._latest_results(client, headers, loc.get("id"))
+                if meas_data is None:
                     return None
-
-                meas_data = meas_resp.json().get("results", [])
                 return self._parse_openaq_data(loc, meas_data, latitude, longitude)
         except (httpx.HTTPError, TimeoutError, ValueError, KeyError, TypeError) as e:
             logger.error("OpenAQ fetch failed (%s): %s", type(e).__name__, str(e))
@@ -110,7 +130,7 @@ class OpenAQAdapter(AirQualityAdapter):
                 resp = await client.get(
                     f"{self.BASE_URL}/locations", headers=headers, params=params
                 )
-                if resp.status_code != 200:
+                if resp.status_code != HTTP_OK:
                     return []
                 results = resp.json().get("results", [])
                 stations = []
@@ -131,57 +151,87 @@ class OpenAQAdapter(AirQualityAdapter):
             logger.error("OpenAQ search stations error (%s): %s", type(e).__name__, str(e))
             return []
 
-    def _parse_openaq_data(
-        self, loc: dict[str, Any], meas_data: list[dict[str, Any]], lat: float, lon: float
-    ) -> NormalizedObservation | None:
-        readings: dict[PollutantType, NormalizedPollutantReading] = {}
-        reported_timestamps: list[datetime] = []
+    @staticmethod
+    def _normalized_value(pollutant: PollutantType, value: Any, unit: Any) -> tuple[float, str]:
+        if pollutant == PollutantType.CO:
+            converter = CO_UNIT_CONVERSIONS.get(unit)
+            if converter:
+                return converter(value), "mg/m³"
+        return value, unit
 
-        for m in meas_data:
-            param = str(m.get("parameter", "")).lower()
-            p_type = OPENAQ_PARAM_MAP.get(param)
-            if not p_type:
-                continue
+    @staticmethod
+    def _measurement_source(
+        loc: dict[str, Any], measurement: dict[str, Any]
+    ) -> tuple[str, Any] | None:
+        """Resolve parameter/unit from sensorsId against the location's sensors metadata."""
+        if "sensorsId" not in measurement:
+            # Direct parameter/unit payloads remain supported for legacy callers.
+            return str(measurement.get("parameter", "")).lower(), measurement.get("unit", "µg/m³")
 
-            val = m.get("value")
-            if val is None or val < 0.0:
-                continue
+        sensors = loc.get("sensors")
+        if not isinstance(sensors, list):
+            return None
+        sensor = next(
+            (
+                item
+                for item in sensors
+                if isinstance(item, dict) and item.get("id") == measurement["sensorsId"]
+            ),
+            None,
+        )
+        if sensor is None:
+            return None
+        parameter = sensor.get("parameter")
+        if isinstance(parameter, dict):
+            name = parameter.get("name") or parameter.get("id") or ""
+            units = parameter.get("units", "µg/m³")
+        else:
+            name, units = parameter or "", "µg/m³"
+        return str(name).lower(), units
 
-            unit = m.get("unit", "µg/m³")
-            # Convert CO if reported in µg/m³ or ppm to mg/m³
-            if p_type == PollutantType.CO:
-                if unit == "µg/m³":
-                    val = val / 1000.0
-                    unit = "mg/m³"
-                elif unit == "ppm":
-                    val = val * 1.145  # ppm to mg/m3 at STP
-                    unit = "mg/m³"
-
-            readings[p_type] = NormalizedPollutantReading(
-                pollutant=p_type,
-                value=round(val, 2),
-                unit=unit,
-                averaging_period_hours=8 if p_type in (PollutantType.CO, PollutantType.O3) else 24,
-            )
-
-            # Use the latest reported measurement time, never retrieval time.
-            dt_str = m.get("datetime")
-            if dt_str:
-                try:
-                    dt = datetime.fromisoformat(dt_str.replace("Z", "+00:00"))
-                    reported_timestamps.append(dt if dt.tzinfo else dt.replace(tzinfo=UTC))
-                except (TypeError, ValueError):
-                    continue
-
-        if not readings or not reported_timestamps:
+    @classmethod
+    def _reading_from_measurement(
+        cls,
+        measurement: dict[str, Any],
+        source: tuple[str, Any],
+    ) -> tuple[PollutantType, NormalizedPollutantReading] | None:
+        param, unit = source
+        pollutant = OPENAQ_PARAM_MAP.get(str(param).lower())
+        if not pollutant:
             return None
 
-        latest_ts = max(reported_timestamps)
+        value = measurement.get("value")
+        if value is None or value < 0.0:
+            return None
 
-        calc_result = compute_official_cpcb_aqi(readings)
+        value, unit = cls._normalized_value(pollutant, value, unit)
+        reading = NormalizedPollutantReading(
+            pollutant=pollutant,
+            value=round(value, 2),
+            unit=unit,
+            averaging_period_hours=(8 if pollutant in SHORT_AVERAGING_POLLUTANTS else 24),
+        )
+        return pollutant, reading
+
+    @staticmethod
+    def _reported_timestamp(measurement: dict[str, Any]) -> datetime | None:
+        """Use the latest reported measurement time, never retrieval time."""
+        raw = measurement.get("datetime")
+        if isinstance(raw, dict):
+            # OpenAQ v3 latest results report the observation time as {"utc": ...}.
+            raw = raw.get("utc")
+        if not raw:
+            return None
+        try:
+            parsed = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+        except (TypeError, ValueError, AttributeError):
+            return None
+        return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
+
+    @staticmethod
+    def _build_station(loc: dict[str, Any], lat: float, lon: float) -> StationMetadata:
         coords = loc.get("coordinates", {})
-
-        station = StationMetadata(
+        return StationMetadata(
             station_id=f"openaq_{loc.get('id')}",
             station_name=loc.get("name", "OpenAQ Station"),
             city=loc.get("locality", "Unknown City"),
@@ -191,15 +241,39 @@ class OpenAQAdapter(AirQualityAdapter):
             distance_km=round(loc.get("distance", 0) / 1000.0, 2) if "distance" in loc else None,
         )
 
+    def _parse_openaq_data(
+        self, loc: dict[str, Any], meas_data: list[dict[str, Any]], lat: float, lon: float
+    ) -> NormalizedObservation | None:
+        readings: dict[PollutantType, NormalizedPollutantReading] = {}
+        reported_timestamps: list[datetime] = []
+
+        for measurement in meas_data:
+            source = self._measurement_source(loc, measurement)
+            if source is None:
+                continue
+            parsed = self._reading_from_measurement(measurement, source)
+            if parsed is None:
+                continue
+            pollutant, reading = parsed
+            readings[pollutant] = reading
+
+            timestamp = self._reported_timestamp(measurement)
+            if timestamp is not None:
+                reported_timestamps.append(timestamp)
+
+        if not readings or not reported_timestamps:
+            return None
+
+        calc_result = compute_official_cpcb_aqi(readings)
         return NormalizedObservation(
             provider=self.provider_id,
-            station=station,
+            station=self._build_station(loc, lat, lon),
             readings={k.value: v for k, v in readings.items()},
             calculated_aqi=calc_result.aqi,
             dominant_pollutant=calc_result.dominant_pollutant,
             aqi_category=calc_result.category,
             data_sufficiency_met=calc_result.data_sufficiency_met,
-            measurement_timestamp=latest_ts,
+            measurement_timestamp=max(reported_timestamps),
             retrieval_timestamp=datetime.now(UTC),
             data_quality_status=calc_result.quality_status,
             notes=calc_result.reason,

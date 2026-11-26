@@ -13,9 +13,11 @@ import { ChatAssistant } from "@/components/assistant/chat-assistant";
 const mockSuccessResponse = {
   answer: "It is safe to exercise. The AQI is 75 — satisfactory.",
   referenced_aqi: 75,
+  dominant_pollutant: "PM2.5",
   risk_level: "low",
   approved_actions: ["Keep outdoor workouts to light intensity."],
   scientific_rationale: "PM2.5 within acceptable thresholds.",
+  provider_provenance: "CPCB/data.gov.in",
   llm_grounded: false,
   disclaimer: "BreatheWise provides environmental guidance only.",
 };
@@ -153,5 +155,59 @@ describe("ChatAssistant", () => {
     await user.type(input, "Test query");
     await user.keyboard("{Enter}");
     expect(input.value).toBe("");
+  });
+
+  it("shows the API error when the request itself fails", async () => {
+    global.fetch = vi.fn().mockRejectedValue(new Error("network is down")) as unknown as typeof fetch;
+    const user = userEvent.setup();
+    render(<ChatAssistant lat={28.6} lon={77.2} />);
+    await user.type(screen.getByRole("textbox"), "Is it safe?");
+    await user.keyboard("{Enter}");
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(/network is down/i);
+    expect(screen.queryByText(/unexpected response/i)).not.toBeInTheDocument();
+  });
+
+  it("uses fixed rate-limit text and hides upstream detail on a non-OK response", async () => {
+    mockFetch({ detail: "backend secret: call 900-xxx" }, 429);
+    const user = userEvent.setup();
+    render(<ChatAssistant lat={28.6} lon={77.2} />);
+    await user.type(screen.getByRole("textbox"), "Is it safe?");
+    await user.keyboard("{Enter}");
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(/Too many assistant requests/i);
+    expect(alert).not.toHaveTextContent(/900-xxx|backend secret/i);
+  });
+
+  it("shows a safe error for a malformed assistant payload", async () => {
+    mockFetch({ answer: 42, risk_level: "low" });
+    const user = userEvent.setup();
+    render(<ChatAssistant lat={28.6} lon={77.2} />);
+    await user.type(screen.getByRole("textbox"), "Is it safe?");
+    await user.keyboard("{Enter}");
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(/unexpected response/i);
+    expect(alert).not.toHaveTextContent(/42/);
+    expect(screen.queryByText(/undefined/i)).not.toBeInTheDocument();
+  });
+
+  it("shows a safe error when the assistant response is not JSON", async () => {
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => {
+        throw new SyntaxError("unexpected token upstream secret");
+      },
+    } as unknown as Response);
+    const user = userEvent.setup();
+    render(<ChatAssistant lat={28.6} lon={77.2} />);
+    await user.type(screen.getByRole("textbox"), "Is it safe?");
+    await user.keyboard("{Enter}");
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(/malformed/i);
+    expect(alert).not.toHaveTextContent(/upstream secret/i);
   });
 });

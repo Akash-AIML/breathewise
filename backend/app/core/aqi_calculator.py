@@ -7,6 +7,18 @@ from app.schemas.observation import (
     PollutantType,
 )
 
+# Shared CPCB category ceilings. Named so policy and explanation code can
+# refer to the same thresholds without magic numbers.
+AQI_GOOD_MAX = 50
+AQI_SATISFACTORY_MAX = 100
+AQI_MODERATE_MAX = 200
+AQI_POOR_MAX = 300
+AQI_VERY_POOR_MAX = 400
+MIN_OFFICIAL_SUB_INDICES = 3
+# Advisory thresholds used by guidance copy; they are not CPCB category ceilings.
+VULNERABLE_AQI_THRESHOLD = 150
+HIGH_EXPOSURE_AQI_THRESHOLD = 250
+
 # CPCB Official Breakpoints: List of (B_Lo, B_Hi, I_Lo, I_Hi)
 # CO is in mg/m3; all other pollutants are in µg/m3
 CPCB_BREAKPOINTS: dict[PollutantType, list[tuple[float, float, int, int]]] = {
@@ -109,24 +121,25 @@ def calculate_sub_index(pollutant: PollutantType, concentration: float) -> int |
     return None
 
 
+AQI_CATEGORY_BANDS: tuple[tuple[int, AQICategory], ...] = (
+    (AQI_GOOD_MAX, AQICategory.GOOD),
+    (AQI_SATISFACTORY_MAX, AQICategory.SATISFACTORY),
+    (AQI_MODERATE_MAX, AQICategory.MODERATE),
+    (AQI_POOR_MAX, AQICategory.POOR),
+    (AQI_VERY_POOR_MAX, AQICategory.VERY_POOR),
+)
+
+
 def get_aqi_category(aqi_value: int) -> AQICategory:
     """Map AQI value to official CPCB category."""
-    if aqi_value <= 50:
-        return AQICategory.GOOD
-    elif aqi_value <= 100:
-        return AQICategory.SATISFACTORY
-    elif aqi_value <= 200:
-        return AQICategory.MODERATE
-    elif aqi_value <= 300:
-        return AQICategory.POOR
-    elif aqi_value <= 400:
-        return AQICategory.VERY_POOR
-    else:
-        return AQICategory.SEVERE
+    return next(
+        (category for ceiling, category in AQI_CATEGORY_BANDS if aqi_value <= ceiling),
+        AQICategory.SEVERE,
+    )
 
 
 class AQICalculatorResult:
-    def __init__(
+    def __init__(  # noqa: PLR0913, PLR0917 - result fields are intentionally explicit
         self,
         aqi: int | None,
         dominant_pollutant: PollutantType | None,
@@ -145,6 +158,41 @@ class AQICalculatorResult:
         self.reason = reason
 
 
+def _collect_sub_indices(
+    readings: dict[PollutantType, NormalizedPollutantReading],
+) -> dict[PollutantType, int]:
+    """Calculate a sub-index for every usable reading, annotating the reading in place."""
+    sub_indices: dict[PollutantType, int] = {}
+    for pollutant, reading in readings.items():
+        if reading.value is not None and not math.isnan(reading.value) and reading.value >= 0.0:
+            si = calculate_sub_index(pollutant, reading.value)
+            if si is not None:
+                sub_indices[pollutant] = si
+                reading.sub_index = si
+    return sub_indices
+
+
+def _insufficient_result(sub_indices: dict[PollutantType, int]) -> AQICalculatorResult:
+    has_particulate = PollutantType.PM2_5 in sub_indices or PollutantType.PM10 in sub_indices
+    reasons: list[str] = []
+    if len(sub_indices) < MIN_OFFICIAL_SUB_INDICES:
+        reasons.append(
+            f"Only {len(sub_indices)} criteria pollutants available "
+            f"(minimum {MIN_OFFICIAL_SUB_INDICES} required)"
+        )
+    if not has_particulate:
+        reasons.append("Neither PM2.5 nor PM10 particulate reading is available")
+    return AQICalculatorResult(
+        aqi=None,
+        dominant_pollutant=None,
+        category=None,
+        sub_indices=sub_indices,
+        data_sufficiency_met=False,
+        quality_status=DataQualityStatus.INSUFFICIENT,
+        reason="; ".join(reasons),
+    )
+
+
 def compute_official_cpcb_aqi(
     readings: dict[PollutantType, NormalizedPollutantReading],
 ) -> AQICalculatorResult:
@@ -157,36 +205,12 @@ def compute_official_cpcb_aqi(
     3. Overall AQI = max(sub_indices).
     4. Dominant pollutant = pollutant with the highest sub-index.
     """
-    sub_indices: dict[PollutantType, int] = {}
-
-    for pollutant, reading in readings.items():
-        if reading.value is not None and not math.isnan(reading.value) and reading.value >= 0.0:
-            si = calculate_sub_index(pollutant, reading.value)
-            if si is not None:
-                sub_indices[pollutant] = si
-                reading.sub_index = si
+    sub_indices = _collect_sub_indices(readings)
 
     # Enforce CPCB Data Sufficiency Rule
     has_particulate = PollutantType.PM2_5 in sub_indices or PollutantType.PM10 in sub_indices
-    sufficient_count = len(sub_indices) >= 3
-
-    if not sufficient_count or not has_particulate:
-        reasons = []
-        if len(sub_indices) < 3:
-            reasons.append(
-                f"Only {len(sub_indices)} criteria pollutants available (minimum 3 required)"
-            )
-        if not has_particulate:
-            reasons.append("Neither PM2.5 nor PM10 particulate reading is available")
-        return AQICalculatorResult(
-            aqi=None,
-            dominant_pollutant=None,
-            category=None,
-            sub_indices=sub_indices,
-            data_sufficiency_met=False,
-            quality_status=DataQualityStatus.INSUFFICIENT,
-            reason="; ".join(reasons),
-        )
+    if len(sub_indices) < MIN_OFFICIAL_SUB_INDICES or not has_particulate:
+        return _insufficient_result(sub_indices)
 
     # Overall AQI is the maximum of the individual sub-indices
     max_pollutant = max(sub_indices, key=lambda k: sub_indices[k])

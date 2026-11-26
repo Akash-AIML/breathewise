@@ -12,6 +12,7 @@ import traceback
 from app.core.config import settings
 
 REDACTED = "[REDACTED]"
+MIN_REDACTED_SECRET_LENGTH = 4
 
 # Query strings used by providers (data.gov.in requires `api-key` in the URL).
 _QUERY_SECRET = re.compile(
@@ -34,7 +35,11 @@ def _configured_secrets() -> list[str]:
         settings.GEMINI_API_KEY,
         settings.REDIS_URL,
     ]
-    return [value for value in candidates if isinstance(value, str) and len(value) >= 4]
+    return [
+        value
+        for value in candidates
+        if isinstance(value, str) and len(value) >= MIN_REDACTED_SECRET_LENGTH
+    ]
 
 
 def redact_text(value: object) -> str:

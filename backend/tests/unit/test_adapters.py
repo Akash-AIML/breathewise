@@ -1,8 +1,10 @@
 from datetime import UTC, datetime, timedelta
 
+import httpx
 import pytest
+from httpx import AsyncClient, MockTransport, Response
 
-from app.adapters.cpcb import CPCBAdapter
+from app.adapters.cpcb import CPCBAdapter, CPCBResponseError
 from app.adapters.openaq import OpenAQAdapter
 from app.adapters.openmeteo import OpenMeteoAdapter
 from app.core.config import settings
@@ -187,3 +189,105 @@ def test_openmeteo_trend_uses_last_24_completed_hours_with_rolling_averages():
         "2026-11-25T10" not in point.time and "2026-11-25T11" not in point.time
         for point in obs.hourly_trend
     )
+
+
+def test_cpcb_unsupported_pollutant_cannot_count_as_pm25(monkeypatch):
+    monkeypatch.setattr(settings, "CPCB_AVERAGING_PERIOD_VERIFIED", True)
+    adapter = CPCBAdapter(api_key="mock_test_key")
+    records = [
+        _cpcb_record("PM10", "80.0"),
+        _cpcb_record("NO2", "40.0"),
+        _cpcb_record("PM2.5 (unverified)", "999.0"),
+    ]
+
+    obs = adapter._parse_records_to_observation(records, 28.61, 77.21)
+    assert obs is not None
+    assert "pm2.5 (unverified)" not in obs.readings
+    assert PollutantType.PM2_5.value not in obs.readings
+    assert obs.calculated_aqi is None
+    assert obs.data_sufficiency_met is False
+
+
+def test_cpcb_observation_preserves_station_city_and_state():
+    adapter = CPCBAdapter(api_key="mock_test_key")
+    record = _cpcb_record(
+        "PM2.5", "45.0", state="Karnataka", city="Bengaluru", station="Indiranagar"
+    )
+
+    observations = adapter.parse_records([record])
+    assert len(observations) == 1
+    obs = observations[0]
+    assert (obs.station, obs.city, obs.state) == ("Indiranagar", "Bengaluru", "Karnataka")
+
+    normalized = adapter.to_normalized(obs, obs.latitude, obs.longitude, 0.0)
+    assert normalized.station.station_name == "Indiranagar"
+    assert normalized.station.city == "Bengaluru"
+    assert normalized.station.state == "Karnataka"
+    assert normalized.station.station_id == "cpcb_karnataka_bengaluru_indiranagar"
+
+
+def test_cpcb_parse_records_skips_malformed_rows_but_rejects_non_list():
+    adapter = CPCBAdapter(api_key="mock_test_key")
+    observations = adapter.parse_records([_cpcb_record("PM2.5", "45.0"), None, "not-a-record"])
+    assert len(observations) == 1
+    assert observations[0].station == "ITO"
+
+    with pytest.raises(CPCBResponseError):
+        adapter.parse_records("not a list")
+
+
+@pytest.mark.asyncio
+async def test_openaq_resolves_latest_results_through_sensor_metadata(monkeypatch):
+    location = {
+        "id": 4242,
+        "name": "Connaught Place Sensor Hub",
+        "locality": "Delhi",
+        "coordinates": {"latitude": 28.63, "longitude": 77.22},
+        "sensors": [
+            {"id": 10, "parameter": {"name": "pm25", "units": "µg/m³"}},
+            {"id": 11, "parameter": {"id": "pm10", "units": "µg/m³"}},
+            {"id": 12, "parameter": {"name": "co", "units": "ppm"}},
+            {"id": 13, "parameter": {"name": "unsupported", "units": "µg/m³"}},
+        ],
+    }
+    latest = [
+        {"sensorsId": 10, "value": 50.0, "datetime": {"utc": "2026-11-24T12:00:00Z"}},
+        {"sensorsId": 11, "value": 100.0, "datetime": "2026-11-24T12:00:00Z"},
+        {"sensorsId": 12, "value": 1.5, "datetime": {"utc": "2026-11-24T12:00:00Z"}},
+        {"sensorsId": 13, "value": 999.0, "datetime": {"utc": "2026-11-24T12:00:00Z"}},
+        {"sensorsId": 999, "value": 999.0, "datetime": {"utc": "2026-11-24T12:00:00Z"}},
+    ]
+
+    def handler(request):
+        if request.url.path.endswith("/latest"):
+            return Response(200, json={"results": latest})
+        return Response(200, json={"results": [location]})
+
+    monkeypatch.setattr(
+        httpx,
+        "AsyncClient",
+        lambda **kwargs: AsyncClient(
+            transport=MockTransport(handler), timeout=kwargs.get("timeout")
+        ),
+    )
+
+    adapter = OpenAQAdapter(api_key="mock_key")
+    obs = await adapter.fetch_by_coordinates(28.63, 77.22)
+    assert obs is not None
+    assert obs.station.station_id == "openaq_4242"
+    assert obs.readings[PollutantType.PM2_5.value].value == 50.0
+    assert obs.readings[PollutantType.PM10.value].unit == "µg/m³"
+    assert obs.readings[PollutantType.CO.value].value == 1.72
+    assert obs.readings[PollutantType.CO.value].unit == "mg/m³"
+    assert "unsupported" not in obs.readings
+    assert obs.measurement_timestamp.isoformat() == "2026-11-24T12:00:00+00:00"
+
+
+def test_openaq_reported_timestamp_supports_object_string_and_malformed_values():
+    parser = OpenAQAdapter._reported_timestamp
+    expected = "2026-11-24T12:00:00+00:00"
+    assert parser({"datetime": {"utc": "2026-11-24T12:00:00Z"}}).isoformat() == expected
+    assert parser({"datetime": "2026-11-24T12:00:00Z"}).isoformat() == expected
+    assert parser({"datetime": {"local": "2026-11-24T12:00:00Z"}}) is None
+    assert parser({"datetime": {"utc": "not-a-date"}}) is None
+    assert parser({"datetime": "not-a-date"}) is None

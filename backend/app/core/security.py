@@ -4,15 +4,31 @@ import math
 import time
 from abc import ABC, abstractmethod
 from collections import defaultdict
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 from fastapi import Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
+from starlette.types import ASGIApp
 
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
+
+
+class RateLimitStoreError(RuntimeError):
+    """Raised when a configured rate-limit store cannot serve a check."""
+
+
+def _redis_driver_errors() -> tuple[type[Exception], ...]:
+    """Driver failures that mean the Redis store is unavailable (import is optional)."""
+    errors: tuple[type[Exception], ...] = (OSError,)
+    try:
+        from redis.exceptions import RedisError  # noqa: PLC0415 - redis is an optional dependency
+    except ImportError:
+        return errors
+    return (*errors, RedisError)
 
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
@@ -21,7 +37,9 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     and MIME-type sniffing.
     """
 
-    async def dispatch(self, request: Request, call_next):
+    async def dispatch(
+        self, request: Request, call_next: Callable[[Request], Awaitable[Response]]
+    ) -> Response:
         response: Response = await call_next(request)
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["X-Frame-Options"] = "DENY"
@@ -125,7 +143,7 @@ class RedisRateLimitStore(RateLimitStore):
         if self._client is not None:
             return
         try:
-            import redis.asyncio as redis_asyncio
+            import redis.asyncio as redis_asyncio  # noqa: PLC0415 - optional dependency
         except ImportError as exc:  # pragma: no cover - depends on deployment deps
             raise RuntimeError("RATE_LIMIT_STORE=redis requires the redis package") from exc
 
@@ -144,9 +162,12 @@ class RedisRateLimitStore(RateLimitStore):
             raise RuntimeError("Redis rate-limit client failed to initialize")
 
         window_ms = max(1, int(window_seconds * 1000))
-        current, ttl_ms = await self._client.eval(
-            _REDIS_RATE_LIMIT_SCRIPT, 1, f"{self.key_prefix}{key}", window_ms
-        )
+        try:
+            current, ttl_ms = await self._client.eval(
+                _REDIS_RATE_LIMIT_SCRIPT, 1, f"{self.key_prefix}{key}", window_ms
+            )
+        except _redis_driver_errors() as exc:
+            raise RateLimitStoreError("Redis rate-limit store unavailable.") from exc
         current = int(current)
         ttl_ms = int(ttl_ms)
         if current <= max_requests:
@@ -188,15 +209,15 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
     errors are fail-open: a rate-limiter outage must not take the API down.
     """
 
-    def __init__(
+    def __init__(  # noqa: PLR0913, PLR0917 - middleware constructor is configured at startup
         self,
-        app,
+        app: ASGIApp,
         max_requests: int = 120,
         window_seconds: int = 60,
         store: RateLimitStore | None = None,
         path_limits: dict[str, int] | None = None,
         trusted_proxies: list[str] | None = None,
-    ):
+    ) -> None:
         super().__init__(app)
         self.max_requests = max_requests
         self.window_seconds = window_seconds
@@ -247,7 +268,9 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         if isinstance(self.store, InMemoryRateLimitStore):
             self.store.clients.clear()
 
-    async def dispatch(self, request: Request, call_next):
+    async def dispatch(
+        self, request: Request, call_next: Callable[[Request], Awaitable[Response]]
+    ) -> Response:
         # Exclude internal health checks from aggressive rate limiting
         if request.url.path in ("/health", "/api/v1/health"):
             return await call_next(request)
@@ -262,7 +285,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                 await self.store.setup()
                 self._store_ready = True
             allowed, retry_after = await self.store.check(store_key, limit, self.window_seconds)
-        except Exception as exc:
+        except (RateLimitStoreError, OSError, RuntimeError, ValueError) as exc:
             # Log only the exception type: driver errors can embed REDIS_URL credentials.
             err_name = type(exc).__name__
             if bucket == "global":

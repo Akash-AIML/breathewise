@@ -1,3 +1,4 @@
+from app.core.aqi_calculator import VULNERABLE_AQI_THRESHOLD
 from app.core.policy_guidance import (
     generate_indoor_guidance,
     generate_sustainable_alternatives,
@@ -35,7 +36,7 @@ def _build_evening_recommendations(
                 expected_impact="positive_exposure_reduction",
             )
         )
-    elif aqi > 150:
+    elif aqi > VULNERABLE_AQI_THRESHOLD:
         evening_items.append(
             RecommendationItem(
                 id="rec_eve_traffic_avoidance",

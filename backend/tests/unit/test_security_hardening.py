@@ -84,7 +84,7 @@ def test_redaction_removes_configured_and_pattern_secrets(monkeypatch):
 
 
 def test_logging_filter_redacts_message_and_traceback(monkeypatch):
-    secret = "traceback-secret-4242"
+    secret = "traceback-secret-4242"  # noqa: S105 - fake secret for redaction test
     monkeypatch.setattr(settings, "GEMINI_API_KEY", secret)
     output = io.StringIO()
     handler = logging.StreamHandler(output)
@@ -110,7 +110,7 @@ def test_logging_filter_redacts_message_and_traceback(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_http_error_detail_is_redacted(monkeypatch):
-    secret = "error-detail-secret-7777"
+    secret = "error-detail-secret-7777"  # noqa: S105 - fake secret for redaction test
     monkeypatch.setattr(settings, "OPENAQ_API_KEY", secret)
     scope = {
         "type": "http",

@@ -1,3 +1,9 @@
+from app.core.aqi_calculator import (
+    AQI_MODERATE_MAX,
+    AQI_SATISFACTORY_MAX,
+    HIGH_EXPOSURE_AQI_THRESHOLD,
+    VULNERABLE_AQI_THRESHOLD,
+)
 from app.schemas.profile import HouseholdProfile
 from app.schemas.recommendation import (
     IndoorGuidance,
@@ -31,7 +37,7 @@ def generate_indoor_guidance(profile: HouseholdProfile, aqi: int | None) -> Indo
     """
 
     # Imported lazily: policy_engine re-exports this module's public API.
-    from app.core.policy_engine import calculate_hepa_cadr_m3_hr
+    from app.core.policy_engine import calculate_hepa_cadr_m3_hr  # noqa: PLC0415 - circular import
 
     area = profile.home_area_sqft or 600
     cadr = calculate_hepa_cadr_m3_hr(area)
@@ -56,14 +62,14 @@ def generate_indoor_guidance(profile: HouseholdProfile, aqi: int | None) -> Indo
             "Keep windows closed, rely on mechanical filtration, and check validated AQI or official "
             "CPCB advisories before opening the home to outdoor air."
         )
-    elif aqi > 250:
+    elif aqi > HIGH_EXPOSURE_AQI_THRESHOLD:
         vent_advice = (
             "Keep external windows and balcony doors sealed during early morning and late night inversions. "
             "However, if cooking on gas or if indoor air feels heavy with carbon dioxide, perform brief (10-15 min) "
             "cross-ventilation during mid-afternoon (1 PM - 4 PM) when atmospheric mixing height is highest, "
             "then seal and run HEPA filtration on high mode."
         )
-    elif aqi > 100:
+    elif aqi > AQI_SATISFACTORY_MAX:
         vent_advice = (
             "Open windows for cross-ventilation during warm afternoon hours (12 PM - 3 PM) when ambient particulate "
             "levels dip. Seal windows in early morning hours when cool air traps local emissions near the ground."
@@ -154,14 +160,17 @@ def generate_sustainable_alternatives(
             "telemetry exists. Zero-emission travel remains environmentally preferable, but use metro or "
             "enclosed public transport until exposure conditions are known."
         )
-    elif aqi > 200:
+    elif aqi > AQI_MODERATE_MAX:
         cycling_note = (
             "CRITICAL EXPOSURE TRADE-OFF: While walking or cycling produces 0.0 g CO2/km emissions, vigorous active transit "
             f"in current AQI ({aqi}) increases your respiratory minute ventilation rate by 300-500%, forcing deep "
             "alveolar deposition of fine combustion soot. DO NOT cycle or jog outdoors during severe air episodes; use metro or bus."
         )
     else:
-        cycling_note = "Safe for short distances when AQI is below 150. Use dedicated non-motorized lanes away from heavy diesel corridors."
+        cycling_note = (
+            f"Safe for short distances when AQI is below {VULNERABLE_AQI_THRESHOLD}. "
+            "Use dedicated non-motorized lanes away from heavy diesel corridors."
+        )
 
     alternatives.append(
         SustainableAlternative(

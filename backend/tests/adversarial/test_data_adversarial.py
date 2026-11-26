@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock
 import httpx
 import pytest
 
+from app.adapters.cpcb import CPCBRateLimitError
 from app.schemas.observation import (
     DataQualityStatus,
     NormalizedObservation,
@@ -84,7 +85,7 @@ async def test_invalid_coordinates_raises_value_error(service):
 async def test_failover_chain_cpcb_to_openaq_to_openmeteo(service, sample_observation):
     # Mock Tier 1 (CPCB) raising error, Tier 2 (OpenAQ) returning None, Tier 3 (OpenMeteo) succeeding
     service.cpcb_adapter.fetch_by_coordinates = AsyncMock(
-        side_effect=Exception("CPCB Rate Limited")
+        side_effect=CPCBRateLimitError("CPCB Rate Limited")
     )
     service.openaq_adapter.fetch_by_coordinates = AsyncMock(return_value=None)
     service.openmeteo_adapter.fetch_by_coordinates = AsyncMock(return_value=sample_observation)

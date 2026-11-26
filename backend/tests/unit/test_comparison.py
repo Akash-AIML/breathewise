@@ -20,7 +20,7 @@ def no_live_cpcb(monkeypatch):
     )
 
 
-def _cpcb_observation(
+def _cpcb_observation(  # noqa: PLR0913, PLR0917 - fixture mirrors observation fields
     station_id: str,
     station: str,
     lat: float,

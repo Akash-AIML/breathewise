@@ -8,7 +8,7 @@ from app.adapters.cpcb import CPCBAdapter
 from app.schemas.cpcb import CPCBStationObservation
 from app.schemas.observation import DataQualityStatus
 
-SECRET = "unit-test-secret-key"
+SECRET = "unit-test-secret-key"  # noqa: S105 - dummy fixture secret
 NOW = datetime.now(UTC).isoformat()
 
 

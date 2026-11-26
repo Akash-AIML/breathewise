@@ -3,6 +3,12 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
+from app.core.geo import (
+    MAX_LATITUDE,
+    MAX_LONGITUDE,
+    MIN_LATITUDE,
+    MIN_LONGITUDE,
+)
 from app.schemas.observation import DataQualityStatus
 
 
@@ -40,14 +46,14 @@ class CPCBStationObservation(BaseModel):
     @field_validator("latitude")
     @classmethod
     def validate_latitude(cls, value: float) -> float:
-        if not -90.0 <= value <= 90.0:
+        if not MIN_LATITUDE <= value <= MAX_LATITUDE:
             raise ValueError("latitude must be between -90 and 90")
         return value
 
     @field_validator("longitude")
     @classmethod
     def validate_longitude(cls, value: float) -> float:
-        if not -180.0 <= value <= 180.0:
+        if not MIN_LONGITUDE <= value <= MAX_LONGITUDE:
             raise ValueError("longitude must be between -180 and 180")
         return value
 

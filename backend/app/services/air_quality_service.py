@@ -1,12 +1,26 @@
 import logging
 from datetime import UTC, datetime, timedelta
 
-from app.adapters.cpcb import CPCBAdapter
+import httpx
+
+from app.adapters.cpcb import (
+    CPCBAdapter,
+    CPCBConfigurationError,
+    CPCBProviderError,
+    redact_secrets,
+)
 from app.adapters.openaq import OpenAQAdapter
 from app.adapters.openmeteo import OpenMeteoAdapter
 from app.core.cache import enforce_limit, prune_expired
 from app.core.config import settings
-from app.core.geo import haversine_distance_km
+from app.core.geo import (
+    MAX_LATITUDE,
+    MAX_LONGITUDE,
+    MIN_LATITUDE,
+    MIN_LONGITUDE,
+    haversine_distance_km,
+)
+from app.schemas.cpcb import CPCBStationObservation
 from app.schemas.observation import (
     DataQualityStatus,
     NormalizedObservation,
@@ -14,6 +28,17 @@ from app.schemas.observation import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Known provider failure modes. A tier may fail but must never abort failover.
+PROVIDER_FETCH_ERRORS = (
+    CPCBProviderError,
+    CPCBConfigurationError,
+    httpx.HTTPError,
+    TimeoutError,
+    ValueError,
+    KeyError,
+    TypeError,
+)
 
 # Predefined verified Indian city centers and key stations
 INDIAN_CITIES_REGISTRY: list[StationMetadata] = [
@@ -154,15 +179,17 @@ class AirQualityService:
                 observation = await adapter.fetch_by_coordinates(latitude, longitude)
                 if observation is not None:
                     return observation
-            except Exception as exc:
-                logger.warning("%s failed (%s): %s", label, type(exc).__name__, str(exc))
+            except PROVIDER_FETCH_ERRORS as exc:
+                logger.warning("%s failed (%s): %s", label, type(exc).__name__, redact_secrets(exc))
         return None
 
     async def get_air_quality_for_coordinates(
         self, latitude: float, longitude: float, bypass_cache: bool = False
     ) -> NormalizedObservation | None:
         """Coordinates-aware air quality retrieval with strict multi-source fallback."""
-        if not (-90.0 <= latitude <= 90.0 and -180.0 <= longitude <= 180.0):
+        if not (
+            MIN_LATITUDE <= latitude <= MAX_LATITUDE and MIN_LONGITUDE <= longitude <= MAX_LONGITUDE
+        ):
             raise ValueError(f"Invalid coordinates: latitude={latitude}, longitude={longitude}")
 
         cache_key = self._get_cache_key(latitude, longitude)
@@ -210,8 +237,9 @@ class AirQualityService:
         """Prefer real CPCB stations; fall back to the labelled static registry."""
         try:
             stations = await self.cpcb_adapter.fetch_nearby(latitude, longitude, max_distance_km)
-        except Exception as exc:
-            logger.warning("Live station search failed: %s", str(exc))
+        except PROVIDER_FETCH_ERRORS as exc:
+            # CPCB errors (including malformed records) fall back to the labelled registry.
+            logger.warning("Live station search failed: %s", redact_secrets(exc))
             stations = []
         if stations:
             return [station for station, _ in stations], "CPCB/data.gov.in"
@@ -220,6 +248,26 @@ class AirQualityService:
             for station, _ in self.search_nearby_stations(latitude, longitude, max_distance_km)
         ], "fallback_registry"
 
+    @staticmethod
+    def _station_from_observation(observation: CPCBStationObservation) -> StationMetadata:
+        return StationMetadata(
+            station_id=observation.station_id,
+            station_name=observation.station,
+            city=observation.city,
+            state=observation.state,
+            latitude=observation.latitude,
+            longitude=observation.longitude,
+            provider="CPCB/data.gov.in",
+            source_observation_time=observation.last_update,
+        )
+
+    @staticmethod
+    def _observation_matches(observation: CPCBStationObservation, needle: str) -> bool:
+        return not needle or any(
+            needle in field.lower()
+            for field in (observation.station, observation.city, observation.state)
+        )
+
     async def search_stations_live(
         self,
         query: str | None = None,
@@ -227,29 +275,17 @@ class AirQualityService:
         state: str | None = None,
     ) -> tuple[list[StationMetadata], str]:
         """Search real CPCB station metadata, with a labelled registry fallback."""
-        observations = []
+        observations: list[CPCBStationObservation] = []
         try:
             observations = await self.cpcb_adapter.get_station_observations(city=city, state=state)
-        except Exception as exc:
-            logger.warning("Live CPCB station search failed: %s", str(exc))
+        except PROVIDER_FETCH_ERRORS as exc:
+            logger.warning("Live CPCB station search failed: %s", redact_secrets(exc))
 
         needle = (query or "").strip().lower()
         stations = [
-            StationMetadata(
-                station_id=obs.station_id,
-                station_name=obs.station,
-                city=obs.city,
-                state=obs.state,
-                latitude=obs.latitude,
-                longitude=obs.longitude,
-                provider="CPCB/data.gov.in",
-                source_observation_time=obs.last_update,
-            )
+            self._station_from_observation(obs)
             for obs in observations
-            if not needle
-            or needle in obs.station.lower()
-            or needle in obs.city.lower()
-            or needle in obs.state.lower()
+            if self._observation_matches(obs, needle)
         ]
         if stations:
             return stations, "CPCB/data.gov.in"

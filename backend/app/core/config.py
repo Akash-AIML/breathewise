@@ -88,7 +88,7 @@ class Settings(BaseSettings):
     TRUSTED_PROXY_IPS: list[str] = []
 
     @model_validator(mode="after")
-    def validate_security_settings(self):
+    def validate_security_settings(self) -> "Settings":
         if "*" in self.CORS_ORIGINS:
             raise ValueError("Wildcard CORS origins are not allowed with credentials")
         if self.ENVIRONMENT.lower() == "production":

@@ -3,6 +3,11 @@
 from collections.abc import Callable
 from typing import Any
 
+from app.core.aqi_calculator import (
+    AQI_MODERATE_MAX,
+    AQI_SATISFACTORY_MAX,
+    VULNERABLE_AQI_THRESHOLD,
+)
 from app.schemas.assistant import ExplanationResponse
 from app.schemas.observation import NormalizedObservation
 from app.schemas.profile import HouseholdProfile
@@ -17,6 +22,23 @@ def render_label(value: Any) -> str:
 
 
 _FallbackParts = tuple[str, str, list[str]]
+
+IMPACT_KEYWORDS = ("impact", "saving", "difference", "co2", "choice", "choices")
+WINTER_KEYWORDS = ("winter", "smog", "inversion", "stubble", "fog")
+EXERCISE_KEYWORDS = ("exercise", "workout", "jog", "run", "walk", "sports", "gym")
+CHILDREN_KEYWORDS = (
+    "child",
+    "children",
+    "kid",
+    "kids",
+    "baby",
+    "infant",
+    "school",
+    "recess",
+    "play",
+)
+INDOOR_KEYWORDS = ("plant", "houseplant", "snake plant", "indoor", "purifier", "filter", "cadr")
+COMMUTE_KEYWORDS = ("commute", "travel", "metro", "bus", "car", "bike", "cycle", "mask", "n95")
 
 
 def _unavailable_response(
@@ -85,7 +107,7 @@ def _winter_smog_reply(obs: NormalizedObservation, aqi: int) -> _FallbackParts:
 def _exercise_reply(
     obs: NormalizedObservation, aqi: int, label: Callable[[Any], str]
 ) -> _FallbackParts:
-    if aqi > 200:
+    if aqi > AQI_MODERATE_MAX:
         return (
             (
                 f"It is NOT safe to exercise outdoors right now. The current AQI at {obs.station.station_name} "
@@ -110,7 +132,7 @@ def _exercise_reply(
 
 
 def _children_reply(aqi: int, label: Callable[[Any], str], category: Any) -> _FallbackParts:
-    if aqi > 150:
+    if aqi > VULNERABLE_AQI_THRESHOLD:
         return (
             (
                 f"Children should avoid outdoor physical play at this time. With an ambient AQI of {aqi} ({label(category)}), "
@@ -154,7 +176,7 @@ def _indoor_reply(plan: PersonalizedPlan, profile: HouseholdProfile) -> _Fallbac
 def _commute_reply(
     obs: NormalizedObservation, aqi: int, label: Callable[[Any], str]
 ) -> _FallbackParts:
-    if aqi > 100:
+    if aqi > AQI_SATISFACTORY_MAX:
         return (
             (
                 f"For commuting in current air ({aqi} AQI, {label(obs.dominant_pollutant)}), the electric metro is your safest and cleanest option. "
@@ -175,7 +197,7 @@ def _commute_reply(
     )
 
 
-def _general_reply(
+def _general_reply(  # noqa: PLR0913, PLR0917 - the grounded baseline needs every input
     obs: NormalizedObservation,
     aqi: int,
     assessment: EnvironmentalAssessment,
@@ -202,7 +224,32 @@ def _general_reply(
     )
 
 
-def generate_deterministic_fallback(
+def _select_reply(  # noqa: PLR0913, PLR0917 - routing needs all grounded inputs
+    query: str,
+    obs: NormalizedObservation,
+    aqi: int,
+    assessment: EnvironmentalAssessment,
+    plan: PersonalizedPlan,
+    profile: HouseholdProfile,
+    label: Callable[[Any], str],
+) -> _FallbackParts:
+    """Route a query to the first matching grounded reply template."""
+    q = query.lower()
+    routes: tuple[tuple[tuple[str, ...], Callable[[], _FallbackParts]], ...] = (
+        (IMPACT_KEYWORDS, lambda: _direct_impact_reply(obs, aqi, plan, profile, label)),
+        (WINTER_KEYWORDS, lambda: _winter_smog_reply(obs, aqi)),
+        (EXERCISE_KEYWORDS, lambda: _exercise_reply(obs, aqi, label)),
+        (CHILDREN_KEYWORDS, lambda: _children_reply(aqi, label, obs.aqi_category)),
+        (INDOOR_KEYWORDS, lambda: _indoor_reply(plan, profile)),
+        (COMMUTE_KEYWORDS, lambda: _commute_reply(obs, aqi, label)),
+    )
+    for keywords, reply in routes:
+        if any(word in q for word in keywords):
+            return reply()
+    return _general_reply(obs, aqi, assessment, plan, profile, label)
+
+
+def generate_deterministic_fallback(  # noqa: PLR0913, PLR0917 - stable public fallback contract
     query: str,
     obs: NormalizedObservation,
     assessment: EnvironmentalAssessment,
@@ -215,29 +262,7 @@ def generate_deterministic_fallback(
     if aqi is None:
         return _unavailable_response(obs, assessment, plan)
 
-    q = query.lower()
-    if any(w in q for w in ("impact", "saving", "difference", "co2", "choice", "choices")):
-        answer, rationale, actions = _direct_impact_reply(obs, aqi, plan, profile, label)
-    elif any(w in q for w in ("winter", "smog", "inversion", "stubble", "fog")):
-        answer, rationale, actions = _winter_smog_reply(obs, aqi)
-    elif any(w in q for w in ("exercise", "workout", "jog", "run", "walk", "sports", "gym")):
-        answer, rationale, actions = _exercise_reply(obs, aqi, label)
-    elif any(
-        w in q
-        for w in ("child", "children", "kid", "kids", "baby", "infant", "school", "recess", "play")
-    ):
-        answer, rationale, actions = _children_reply(aqi, label, obs.aqi_category)
-    elif any(
-        w in q
-        for w in ("plant", "houseplant", "snake plant", "indoor", "purifier", "filter", "cadr")
-    ):
-        answer, rationale, actions = _indoor_reply(plan, profile)
-    elif any(
-        w in q for w in ("commute", "travel", "metro", "bus", "car", "bike", "cycle", "mask", "n95")
-    ):
-        answer, rationale, actions = _commute_reply(obs, aqi, label)
-    else:
-        answer, rationale, actions = _general_reply(obs, aqi, assessment, plan, profile, label)
+    answer, rationale, actions = _select_reply(query, obs, aqi, assessment, plan, profile, label)
 
     return ExplanationResponse(
         answer=answer,

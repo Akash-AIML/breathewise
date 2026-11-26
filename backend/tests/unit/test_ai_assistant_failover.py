@@ -7,6 +7,7 @@ Shared observation/profile/service fixtures live in ``tests/unit/conftest.py``.
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import httpx
 import pytest
 from httpx import AsyncClient, MockTransport, Response
 
@@ -70,8 +71,6 @@ class TestLLMResponseValidation:
         self, service: LLMAssistantService, clean_observation, default_profile
     ):
         """When Groq raises a network exception, fall back gracefully."""
-        import httpx
-
         with (
             patch.object(service, "groq_api_key", "fake_key"),
             patch.object(service, "gemini_api_key", None),
@@ -226,7 +225,7 @@ class TestGeminiModelFailover:
     async def test_failover_logs_never_contain_key(
         self, monkeypatch, service, clean_observation, default_profile, caplog
     ):
-        secret = "SUPER_SECRET_GEMINI_KEY_123"
+        secret = "SUPER_SECRET_GEMINI_KEY_123"  # noqa: S105 - fake key for redaction test
         monkeypatch.setattr(settings, "GEMINI_MODELS", "model-a")
         monkeypatch.setattr(service, "gemini_api_key", secret)
         monkeypatch.setattr(service, "groq_api_key", None)
@@ -249,7 +248,9 @@ class TestGeminiModelFailover:
         monkeypatch.setattr(service, "groq_api_key", None)
         captured = {}
 
-        async def capture(query, system_prompt, obs, assessment, actions, model):
+        async def capture(  # noqa: PLR0913, PLR0917 - mirrors LLM provider call signature
+            query, system_prompt, obs, assessment, actions, model
+        ):
             captured["system_prompt"] = system_prompt
 
         monkeypatch.setattr(service, "_call_gemini", capture)

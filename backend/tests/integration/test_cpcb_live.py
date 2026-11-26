@@ -6,6 +6,7 @@ from app.adapters.cpcb import CPCBAdapter
 from app.core.config import settings
 
 pytestmark = [
+    pytest.mark.integration,
     pytest.mark.live,
     pytest.mark.skipif(
         os.getenv("RUN_LIVE_TESTS") != "1" or not settings.DATA_GOV_IN_API_KEY,

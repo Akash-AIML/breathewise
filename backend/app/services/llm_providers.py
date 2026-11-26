@@ -46,7 +46,12 @@ def parse_json_object(text: str) -> dict | None:
     return parsed if isinstance(parsed, dict) else None
 
 
-async def call_groq(
+HTTP_OK = 200
+HTTP_BAD_REQUEST = 400
+KEY_REJECTION_CODES = frozenset({401, 403})
+
+
+async def call_groq(  # noqa: PLR0913, PLR0917 - mirrors the service delegation contract
     service: LLMAssistantService,
     query: str,
     system_prompt: str,
@@ -73,7 +78,7 @@ async def call_groq(
 
     async with httpx.AsyncClient(timeout=8.0) as client:
         resp = await client.post(url, headers=headers, json=payload)
-        if resp.status_code != 200:
+        if resp.status_code != HTTP_OK:
             logger.warning("Groq API returned HTTP %s", resp.status_code)
             return None
 
@@ -101,7 +106,7 @@ def _extract_gemini_text(data: dict) -> str | None:
     return texts[-1] if texts else None
 
 
-async def call_gemini(
+async def call_gemini(  # noqa: PLR0913, PLR0917 - mirrors the service delegation contract
     service: LLMAssistantService,
     query: str,
     system_prompt: str,
@@ -112,7 +117,10 @@ async def call_gemini(
 ) -> ExplanationResponse | None:
     """One model in the configured free-tier chain. Never logs the API key."""
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
-    headers = {"x-goog-api-key": service.gemini_api_key, "Content-Type": "application/json"}
+    headers: dict[str, str] = {
+        "x-goog-api-key": service.gemini_api_key or "",
+        "Content-Type": "application/json",
+    }
     is_gemma = model.startswith("gemma-")
     payload = {
         "systemInstruction": {"parts": [{"text": system_prompt}]},
@@ -128,9 +136,11 @@ async def call_gemini(
 
     async with httpx.AsyncClient(timeout=timeout) as client:
         resp = await client.post(url, headers=headers, json=payload)
-        if resp.status_code != 200:
+        if resp.status_code != HTTP_OK:
             body = resp.text.lower() if hasattr(resp, "text") else ""
-            if resp.status_code in (401, 403) or (resp.status_code == 400 and "api key" in body):
+            if resp.status_code in KEY_REJECTION_CODES or (
+                resp.status_code == HTTP_BAD_REQUEST and "api key" in body
+            ):
                 raise _LLMPermanentError("Gemini key rejected")
             logger.warning(
                 "Gemini model %s returned HTTP %s; trying next model.", model, resp.status_code

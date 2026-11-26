@@ -1,3 +1,8 @@
+from app.core.aqi_calculator import (
+    AQI_MODERATE_MAX,
+    AQI_SATISFACTORY_MAX,
+    VULNERABLE_AQI_THRESHOLD,
+)
 from app.schemas.profile import HouseholdProfile
 from app.schemas.recommendation import RecommendationItem
 
@@ -16,7 +21,7 @@ def _morning_activity_item(aqi: int | None, is_vulnerable: bool) -> Recommendati
             expected_impact="positive_exposure_reduction",
             limitations="Re-check validated telemetry before resuming outdoor exertion.",
         )
-    if aqi > 200:
+    if aqi > AQI_MODERATE_MAX:
         return RecommendationItem(
             id="rec_morn_exercise_cancel",
             category="planner",
@@ -29,7 +34,7 @@ def _morning_activity_item(aqi: int | None, is_vulnerable: bool) -> Recommendati
             expected_impact="positive_exposure_reduction",
             limitations="Requires access to indoor exercise space.",
         )
-    if aqi > 100:
+    if aqi > AQI_SATISFACTORY_MAX:
         return RecommendationItem(
             id="rec_morn_exercise_moderate",
             category="planner",
@@ -67,7 +72,7 @@ def _morning_children_item(aqi: int | None) -> RecommendationItem:
             supporting_evidence="WHO guidelines advise reducing children's exposure when air quality is uncertain or degraded.",
             expected_impact="positive_exposure_reduction",
         )
-    if aqi > 150:
+    if aqi > VULNERABLE_AQI_THRESHOLD:
         return RecommendationItem(
             id="rec_morn_school_commute",
             category="protective",
@@ -115,7 +120,7 @@ def _build_morning_recommendations(
                     expected_impact="positive_exposure_reduction",
                 )
             )
-        elif aqi > 100:
+        elif aqi > AQI_SATISFACTORY_MAX:
             morning_items.append(
                 RecommendationItem(
                     id="rec_morn_commute_n95",
@@ -182,7 +187,7 @@ def _build_afternoon_recommendations(
                 expected_impact="positive_exposure_reduction",
             )
         )
-    elif aqi > 150:
+    elif aqi > VULNERABLE_AQI_THRESHOLD:
         afternoon_items.append(
             RecommendationItem(
                 id="rec_aft_ozone_awareness",
@@ -212,7 +217,7 @@ def _build_afternoon_recommendations(
             )
         )
 
-    if profile.occupation_type == "outdoor" and aqi is not None and aqi > 200:
+    if profile.occupation_type == "outdoor" and aqi is not None and aqi > AQI_MODERATE_MAX:
         afternoon_items.append(
             RecommendationItem(
                 id="rec_aft_outdoor_worker",

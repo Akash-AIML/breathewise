@@ -31,7 +31,8 @@ class CPCBQueriesMixin:
             )
             return self.parse_records(records)
 
-        return await self._load_with_fallback("sample", load)
+        observations: list[CPCBStationObservation] = await self._load_with_fallback("sample", load)
+        return observations
 
     async def _all_observations(self) -> list[CPCBStationObservation]:
         """Bounded pagination, cached. Only used when a precise filter is unavailable."""
@@ -40,7 +41,8 @@ class CPCBQueriesMixin:
             records, _ = await self._fetch_pages()
             return self.parse_records(records)
 
-        return await self._load_with_fallback("all", load)
+        observations: list[CPCBStationObservation] = await self._load_with_fallback("all", load)
+        return observations
 
     @staticmethod
     def _matches(observation: CPCBStationObservation, city: str | None, state: str | None) -> bool:
@@ -94,26 +96,34 @@ class CPCBQueriesMixin:
                 results[field] = entry
             return results
 
-        return await self._load_with_fallback("filter_verification", load)
+        result: dict[str, dict[str, Any]] = await self._load_with_fallback(
+            "filter_verification", load
+        )
+        return result
+
+    async def _value_is_verified(
+        self,
+        sample: list[CPCBStationObservation],
+        field: str,
+        value: str | None,
+        probe: str,
+        canonical: str,
+    ) -> bool:
+        """Accept a filter value seen in the sample or confirmed by an upstream probe."""
+        if not value:
+            return True
+        needle = value.strip().lower()
+        if needle in {getattr(obs, field).strip().lower() for obs in sample}:
+            return True
+        verification = await self.verify_filters()
+        return bool(verification.get(probe, {}).get("verified")) and needle == canonical
 
     async def _filter_is_verified(self, city: str | None, state: str | None) -> bool:
         """Only use upstream filters for values actually seen or probed successfully."""
         sample = await self._sample_observations()
-        if city and not any(obs.city.strip().lower() == city.strip().lower() for obs in sample):
-            verification = await self.verify_filters()
-            if (
-                not verification.get("city", {}).get("verified")
-                or city.strip().lower() != "chennai"
-            ):
-                return False
-        if state and not any(obs.state.strip().lower() == state.strip().lower() for obs in sample):
-            verification = await self.verify_filters()
-            if (
-                not verification.get("state", {}).get("verified")
-                or state.strip().lower() != "tamil nadu"
-            ):
-                return False
-        return True
+        if not await self._value_is_verified(sample, "city", city, "city", "chennai"):
+            return False
+        return await self._value_is_verified(sample, "state", state, "state", "tamil nadu")
 
     async def get_station_observations(
         self, city: str | None = None, state: str | None = None
@@ -148,4 +158,5 @@ class CPCBQueriesMixin:
                 ]
             return observations
 
-        return await self._load_with_fallback(key, load)
+        observations: list[CPCBStationObservation] = await self._load_with_fallback(key, load)
+        return observations

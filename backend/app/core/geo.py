@@ -1,5 +1,10 @@
 import math
 
+MIN_LATITUDE = -90.0
+MAX_LATITUDE = 90.0
+MIN_LONGITUDE = -180.0
+MAX_LONGITUDE = 180.0
+
 
 def haversine_distance_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     """Calculate the great-circle distance between two points on Earth in km."""

@@ -1,5 +1,5 @@
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import HomePage from "@/app/page";
 import { SAVED_COORDINATES_KEY } from "@/components/dashboard/use-location-state";
 
@@ -36,6 +36,10 @@ describe("HomePage location handling", () => {
     window.localStorage.clear();
     mockFetch(null);
     setGeolocation(28.6289, 77.2407, 35);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
   });
 
   it("uses exact device coordinates instead of snapping to a hardcoded city", async () => {
@@ -198,5 +202,41 @@ describe("HomePage location handling", () => {
 
     expect(await screen.findByText(/Saved coordinates cleared/i)).toBeInTheDocument();
     expect(window.localStorage.getItem(SAVED_COORDINATES_KEY)).toBeNull();
+  });
+
+  it("applies manual coordinates in memory when the browser refuses the write", async () => {
+    vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new Error("storage denied");
+    });
+    render(<HomePage />);
+    fireEvent.change(screen.getByLabelText(/exact coordinates \(lat, lon\)/i), {
+      target: { value: "12.9716, 77.5946" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /use coordinates/i }));
+
+    expect(
+      await screen.findByText(
+        /using manually entered coordinates \(12\.9716, 77\.5946\).*could not be saved in this browser/i
+      )
+    ).toBeInTheDocument();
+    await waitFor(() => {
+      const urls = (global.fetch as ReturnType<typeof vi.fn>).mock.calls.map((call) => String(call[0]));
+      expect(urls.some((url) => url.includes("lat=12.9716") && url.includes("lon=77.5946"))).toBe(true);
+    });
+  });
+
+  it("reports honestly when saved coordinates could not be removed from storage", async () => {
+    window.localStorage.setItem(SAVED_COORDINATES_KEY, "11.4953, 77.2793");
+    vi.spyOn(Storage.prototype, "removeItem").mockImplementation(() => {
+      throw new Error("storage denied");
+    });
+    render(<HomePage />);
+
+    expect(await screen.findByText(/Using saved coordinates/i)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /Clear saved coordinates/i }));
+
+    expect(
+      await screen.findByText(/saved coordinates cleared for this session.*could not be removed/i)
+    ).toBeInTheDocument();
   });
 });

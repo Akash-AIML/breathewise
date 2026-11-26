@@ -1,5 +1,6 @@
 import asyncio
 import logging
+from typing import Any
 
 import httpx
 
@@ -41,7 +42,7 @@ class LLMAssistantService:
     schema validation, and deterministic fallback.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.groq_api_key = settings.GROQ_API_KEY
         self.gemini_api_key = settings.GEMINI_API_KEY
 
@@ -167,7 +168,7 @@ class LLMAssistantService:
             logger.warning("Gemini model %s returned unusable output; trying next model.", model)
         return None
 
-    async def _call_server_llm(
+    async def _call_server_llm(  # noqa: PLR0913, PLR0917 - stable internal call contract
         self,
         query: str,
         obs: NormalizedObservation,
@@ -203,7 +204,7 @@ class LLMAssistantService:
         return None
 
     @staticmethod
-    def _label(value) -> str:
+    def _label(value: Any) -> str:
         """Render enums as human-readable labels in generated explanations."""
         return render_label(value)
 
@@ -227,6 +228,31 @@ class LLMAssistantService:
         """Reject LLM answers that assert an AQI other than the validated value."""
         return llm_safety.answer_is_grounded(answer, validated_aqi)
 
+    @staticmethod
+    def _required_text(parsed: dict[str, Any], field: str) -> str | None:
+        """Return a non-empty text field from model output, verbatim."""
+        value = parsed.get(field)
+        return value if isinstance(value, str) and value.strip() else None
+
+    @staticmethod
+    def _has_control_tokens(*fields: str) -> bool:
+        # Defence in depth: never echo generated control tokens into the UI.
+        return any(
+            marker in normalize_for_screening(field)
+            for field in fields
+            for marker in INJECTION_MARKERS
+        )
+
+    @staticmethod
+    def _safe_actions(raw_actions: Any, approved_actions: list[str]) -> list[str]:
+        if not isinstance(raw_actions, list):
+            return []
+        return [
+            action.strip()
+            for action in raw_actions
+            if isinstance(action, str) and action.strip() in approved_actions
+        ]
+
     @classmethod
     def _build_grounded_explanation(
         cls,
@@ -235,34 +261,17 @@ class LLMAssistantService:
         assessment: EnvironmentalAssessment,
         approved_actions: list[str],
     ) -> ExplanationResponse | None:
-        answer = parsed.get("answer")
-        rationale = parsed.get("scientific_rationale")
-        if not isinstance(answer, str) or not answer.strip():
-            return None
-        if not isinstance(rationale, str) or not rationale.strip():
+        answer = cls._required_text(parsed, "answer")
+        rationale = cls._required_text(parsed, "scientific_rationale")
+        if answer is None or rationale is None:
             return None
         if not cls._answer_is_grounded(answer, obs.calculated_aqi):
             return None
-        # Defence in depth: never echo generated control tokens into the UI,
-        # even if the upstream model was successfully prompt-injected.
-        if any(
-            marker in normalize_for_screening(field)
-            for field in (answer, rationale)
-            for marker in INJECTION_MARKERS
-        ):
+        if cls._has_control_tokens(answer, rationale):
             logger.warning("Discarding LLM output containing control tokens")
             return None
 
-        raw_actions = parsed.get("approved_actions")
-        safe_actions = (
-            [
-                action.strip()
-                for action in raw_actions
-                if isinstance(action, str) and action.strip() in approved_actions
-            ]
-            if isinstance(raw_actions, list)
-            else []
-        )
+        safe_actions = cls._safe_actions(parsed.get("approved_actions"), approved_actions)
 
         # Baseline fields and actions cannot be tampered with by the LLM.
         return ExplanationResponse(
@@ -291,7 +300,7 @@ class LLMAssistantService:
     ) -> ExplanationResponse | None:
         return await call_groq(self, query, system_prompt, obs, assessment, approved_actions)
 
-    async def _call_gemini(
+    async def _call_gemini(  # noqa: PLR0913, PLR0917 - mirrors the Groq call contract
         self,
         query: str,
         system_prompt: str,

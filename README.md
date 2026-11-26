@@ -16,6 +16,10 @@ Frontend (Next.js 16, TypeScript, Tailwind)
                                       └── Stage 3: Injection screen → Gemini/Groq → Deterministic fallback
 ```
 
+## Demo
+
+[Watch the 26-second submission demo](https://github.com/Akash-AIML/breathewise/releases/download/demo-v1/breathewise-demo.mp4). The video is hosted as a GitHub release asset to keep the repository small.
+
 ## Quick Start
 
 ### 1. Environment

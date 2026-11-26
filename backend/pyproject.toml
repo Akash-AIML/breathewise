@@ -18,6 +18,7 @@ asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 markers = [
     "live: integration tests that call real external providers (opt-in with RUN_LIVE_TESTS=1)",
+    "integration: tests that require external services or live providers (skipped by default)",
 ]
 
 [tool.ruff]
@@ -26,8 +27,9 @@ target-version = "py312"
 
 [tool.ruff.lint]
 # Comprehensive rule set: pycodestyle, pyflakes, isort, pyupgrade, bugbear,
-# flake8-simplify, flake8-pie, Ruff-specific, perflint, pylint (errors only)
-select = ["E", "F", "I", "W", "UP", "B", "SIM", "PIE", "RUF", "PERF", "PLE"]
+# flake8-simplify, flake8-pie, Ruff-specific, perflint, mccabe complexity,
+# pylint, and flake8-bandit security checks.
+select = ["E", "F", "I", "W", "UP", "B", "SIM", "PIE", "RUF", "PERF", "C90", "PL", "S"]
 ignore = [
     "E501",      # line too long — handled by formatter
     "B008",      # do not perform function calls in default arguments (FastAPI Depends)
@@ -47,9 +49,15 @@ indent-style = "space"
 python_version = "3.12"
 plugins = ["pydantic.mypy"]
 ignore_missing_imports = true
-strict = false
+warn_unused_configs = true
 warn_unused_ignores = true
-warn_return_any = false
-disallow_untyped_defs = false
+warn_redundant_casts = true
+warn_return_any = true
+no_implicit_optional = true
+strict_equality = true
+check_untyped_defs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+extra_checks = true
 
 

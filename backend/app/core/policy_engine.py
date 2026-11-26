@@ -1,13 +1,16 @@
-from app.core.policy_guidance import (
-    EMISSION_FACTORS as EMISSION_FACTORS,
+from app.core.aqi_calculator import (
+    AQI_GOOD_MAX,
+    AQI_MODERATE_MAX,
+    AQI_POOR_MAX,
+    AQI_SATISFACTORY_MAX,
+    AQI_VERY_POOR_MAX,
 )
 from app.core.policy_guidance import (
-    generate_indoor_guidance as generate_indoor_guidance,
+    EMISSION_FACTORS,
+    generate_indoor_guidance,
+    generate_sustainable_alternatives,
 )
-from app.core.policy_guidance import (
-    generate_sustainable_alternatives as generate_sustainable_alternatives,
-)
-from app.core.policy_plan import generate_personalized_plan as generate_personalized_plan
+from app.core.policy_plan import generate_personalized_plan
 from app.schemas.observation import (
     DataQualityStatus,
     NormalizedObservation,
@@ -15,6 +18,43 @@ from app.schemas.observation import (
 from app.schemas.recommendation import (
     EnvironmentalAssessment,
     RiskClassification,
+)
+
+__all__ = [
+    "EMISSION_FACTORS",
+    "assess_environmental_risk",
+    "calculate_hepa_cadr_m3_hr",
+    "generate_indoor_guidance",
+    "generate_personalized_plan",
+    "generate_sustainable_alternatives",
+]
+
+RISK_BANDS: tuple[tuple[int, RiskClassification, str], ...] = (
+    (
+        AQI_GOOD_MAX,
+        RiskClassification.LOW,
+        "Air quality is satisfactory and poses little or no health risk to the public.",
+    ),
+    (
+        AQI_SATISFACTORY_MAX,
+        RiskClassification.LOW,
+        "Air quality is acceptable. Minor breathing discomfort may occur for highly sensitive individuals.",
+    ),
+    (
+        AQI_MODERATE_MAX,
+        RiskClassification.MODERATE,
+        "Moderate air pollution. Breathing discomfort may impact sensitive groups including children and the elderly.",
+    ),
+    (
+        AQI_POOR_MAX,
+        RiskClassification.HIGH,
+        "Poor air quality. Prolonged exposure causes breathing discomfort to most people.",
+    ),
+    (
+        AQI_VERY_POOR_MAX,
+        RiskClassification.VERY_HIGH,
+        "Very poor air quality. Triggers respiratory illness on prolonged exposure. Significant risk to vulnerable members.",
+    ),
 )
 
 
@@ -40,25 +80,16 @@ def assess_environmental_risk(observation: NormalizedObservation) -> Environment
             ),
         )
 
-    # Map CPCB AQI to risk classification
-    if aqi <= 50:
-        risk = RiskClassification.LOW
-        summary = "Air quality is satisfactory and poses little or no health risk to the public."
-    elif aqi <= 100:
-        risk = RiskClassification.LOW
-        summary = "Air quality is acceptable. Minor breathing discomfort may occur for highly sensitive individuals."
-    elif aqi <= 200:
-        risk = RiskClassification.MODERATE
-        summary = "Moderate air pollution. Breathing discomfort may impact sensitive groups including children and the elderly."
-    elif aqi <= 300:
-        risk = RiskClassification.HIGH
-        summary = "Poor air quality. Prolonged exposure causes breathing discomfort to most people."
-    elif aqi <= 400:
-        risk = RiskClassification.VERY_HIGH
-        summary = "Very poor air quality. Triggers respiratory illness on prolonged exposure. Significant risk to vulnerable members."
-    else:
-        risk = RiskClassification.SEVERE
-        summary = "Severe air emergency. Affects healthy people and seriously impacts those with existing respiratory or cardiovascular disease."
+    # Map CPCB AQI to risk classification through the shared category ceilings.
+    band = next(
+        ((risk, summary) for ceiling, risk, summary in RISK_BANDS if aqi <= ceiling),
+        (
+            RiskClassification.SEVERE,
+            "Severe air emergency. Affects healthy people and seriously impacts those with "
+            "existing respiratory or cardiovascular disease.",
+        ),
+    )
+    risk, summary = band
 
     confidence = 0.95 if observation.data_sufficiency_met else 0.65
     if is_stale:

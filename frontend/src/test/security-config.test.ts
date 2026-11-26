@@ -37,7 +37,25 @@ describe("frontend security configuration", () => {
     vi.stubEnv("NEXT_PUBLIC_API_BASE_URL", "https://attacker.example");
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
-      json: async () => ({ success: true, data: {} }),
+      json: async () => ({ success: true, data: null, message: "No live observation" }),
+    });
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    const { fetchAirQuality } = await import("@/lib/api");
+    await fetchAirQuality(19.076, 72.8777);
+
+    const url = String(fetchMock.mock.calls[0][0]);
+    expect(url).toContain("/api/v1/air-quality");
+    expect(url).not.toContain("attacker.example");
+  });
+
+  it("ignores a protocol-relative API base URL in production", async () => {
+    vi.resetModules();
+    vi.stubEnv("NEXT_PUBLIC_APP_ENV", "production");
+    vi.stubEnv("NEXT_PUBLIC_API_BASE_URL", "//attacker.example");
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ success: true, data: null, message: "No live observation" }),
     });
     global.fetch = fetchMock as unknown as typeof fetch;
 
