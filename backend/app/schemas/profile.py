@@ -1,4 +1,4 @@
-from typing import Literal, Optional
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -39,13 +39,13 @@ class HouseholdProfile(BaseModel):
     has_air_purifier: bool = Field(
         False, description="Ownership of domestic mechanical HEPA purifiers"
     )
-    approximate_budget_inr: Optional[int] = Field(
+    approximate_budget_inr: int | None = Field(
         None,
         ge=0,
         le=500000,
         description="Approximate household budget for air quality protective measures (INR)",
     )
-    home_area_sqft: Optional[int] = Field(
+    home_area_sqft: int | None = Field(
         600,
         ge=100,
         le=10000,

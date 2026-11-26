@@ -1,6 +1,5 @@
 import ipaddress
 from pathlib import Path
-from typing import Optional
 
 from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -24,10 +23,10 @@ class Settings(BaseSettings):
     PROJECT_NAME: str = "BreatheWise Backend"
 
     # API Keys (optional; adapters degrade gracefully when not provided)
-    DATA_GOV_IN_API_KEY: Optional[str] = None
-    OPENAQ_API_KEY: Optional[str] = None
-    GROQ_API_KEY: Optional[str] = None
-    GEMINI_API_KEY: Optional[str] = None
+    DATA_GOV_IN_API_KEY: str | None = None
+    OPENAQ_API_KEY: str | None = None
+    GROQ_API_KEY: str | None = None
+    GEMINI_API_KEY: str | None = None
 
     # Free-tier Gemini model chain, tried in order. A rate-limited, unavailable,
     # or malformed response on one model never blocks the next one.
@@ -68,7 +67,7 @@ class Settings(BaseSettings):
     CPCB_CONNECT_TIMEOUT_SECONDS: float = 5.0
     CPCB_READ_TIMEOUT_SECONDS: float = 20.0
     # Wall-clock ceiling for a single CPCB lookup inside a user request. Without
-    # this, retries × pages can exceed a proxy timeout and prevent failover.
+    # this, retries x pages can exceed a proxy timeout and prevent failover.
     CPCB_REQUEST_BUDGET_SECONDS: float = 3.0
     # After a failed CPCB lookup, skip the provider briefly so follow-up tabs
     # and requests do not each repeat a long, doomed retry chain.

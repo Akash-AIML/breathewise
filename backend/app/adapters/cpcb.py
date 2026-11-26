@@ -1,7 +1,7 @@
 import asyncio
 import logging
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 from app.adapters.base import AirQualityAdapter
 from app.adapters.cpcb_parsing import CPCB_POLLUTANT_MAP, CPCBParsingMixin
@@ -23,13 +23,13 @@ from app.schemas.observation import NormalizedObservation, StationMetadata
 logger = logging.getLogger(__name__)
 
 __all__ = [
+    "CPCB_POLLUTANT_MAP",
     "CPCBAdapter",
     "CPCBConfigurationError",
     "CPCBProviderError",
     "CPCBRateLimitError",
-    "CPCBTemporaryError",
     "CPCBResponseError",
-    "CPCB_POLLUTANT_MAP",
+    "CPCBTemporaryError",
     "redact_secrets",
 ]
 
@@ -47,16 +47,16 @@ class CPCBAdapter(CPCBQueriesMixin, CPCBTransportMixin, CPCBParsingMixin, AirQua
 
     def __init__(
         self,
-        api_key: Optional[str] = None,
-        station_registry: Optional[List[StationMetadata]] = None,
+        api_key: str | None = None,
+        station_registry: list[StationMetadata] | None = None,
     ):
         self.api_key = api_key or settings.DATA_GOV_IN_API_KEY
         self.configured = bool(self.api_key)
         self.station_registry = station_registry or []
-        self._cache: Dict[str, Tuple[datetime, Any]] = {}
-        self._last_valid: Dict[str, Tuple[datetime, List[CPCBStationObservation]]] = {}
-        self._locks: Dict[str, asyncio.Lock] = {}
-        self._circuit_open_until: Optional[datetime] = None
+        self._cache: dict[str, tuple[datetime, Any]] = {}
+        self._last_valid: dict[str, tuple[datetime, list[CPCBStationObservation]]] = {}
+        self._locks: dict[str, asyncio.Lock] = {}
+        self._circuit_open_until: datetime | None = None
         if not self.configured:
             if settings.ENVIRONMENT.lower() == "production":
                 raise CPCBConfigurationError(
@@ -77,8 +77,8 @@ class CPCBAdapter(CPCBQueriesMixin, CPCBTransportMixin, CPCBParsingMixin, AirQua
     # ── Public adapter interface ─────────────────────────────────────────────
 
     async def search_stations(
-        self, city: Optional[str] = None, state: Optional[str] = None
-    ) -> List[StationMetadata]:
+        self, city: str | None = None, state: str | None = None
+    ) -> list[StationMetadata]:
         if not self.configured:
             return []
         try:
@@ -103,7 +103,7 @@ class CPCBAdapter(CPCBQueriesMixin, CPCBTransportMixin, CPCBParsingMixin, AirQua
 
     async def fetch_by_coordinates(
         self, latitude: float, longitude: float
-    ) -> Optional[NormalizedObservation]:
+    ) -> NormalizedObservation | None:
         if not self.configured:
             return None
         try:
@@ -127,7 +127,7 @@ class CPCBAdapter(CPCBQueriesMixin, CPCBTransportMixin, CPCBParsingMixin, AirQua
 
     async def fetch_nearby(
         self, latitude: float, longitude: float, max_distance_km: float = 50.0
-    ) -> List[Tuple[StationMetadata, float]]:
+    ) -> list[tuple[StationMetadata, float]]:
         """Return actual CPCB stations near a user location, sorted by distance."""
         observations = await self.get_station_observations()
         nearby = []
@@ -149,7 +149,7 @@ class CPCBAdapter(CPCBQueriesMixin, CPCBTransportMixin, CPCBParsingMixin, AirQua
             (item for item in nearby if item[1] <= max_distance_km), key=lambda item: item[1]
         )
 
-    async def get_station_observation(self, station_id: str) -> Optional[CPCBStationObservation]:
+    async def get_station_observation(self, station_id: str) -> CPCBStationObservation | None:
         for obs in await self.get_station_observations():
             if obs.station_id == station_id:
                 return obs
@@ -157,8 +157,8 @@ class CPCBAdapter(CPCBQueriesMixin, CPCBTransportMixin, CPCBParsingMixin, AirQua
 
     # Backwards-compatible helper used by existing unit tests.
     def _parse_records_to_observation(
-        self, records: List[Dict[str, Any]], lat: float, lon: float
-    ) -> Optional[NormalizedObservation]:
+        self, records: list[dict[str, Any]], lat: float, lon: float
+    ) -> NormalizedObservation | None:
         observations = self.parse_records(records)
         if not observations:
             return None

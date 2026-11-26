@@ -1,8 +1,8 @@
 import asyncio
 import logging
 import re
-from datetime import datetime, timedelta, timezone
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
+from datetime import UTC, datetime, timedelta
+from typing import TYPE_CHECKING, Any
 
 import httpx
 
@@ -49,13 +49,13 @@ def redact_secrets(value: object) -> str:
 class CPCBTransportMixin:
     """HTTP requests, caching, and circuit-breaker helpers for CPCBAdapter."""
 
-    api_key: Optional[str]
+    api_key: str | None
     BASE_URL: str
     RESOURCE_ID: str
-    _cache: Dict[str, Tuple[datetime, Any]]
-    _last_valid: Dict[str, Tuple[datetime, List[CPCBStationObservation]]]
-    _locks: Dict[str, asyncio.Lock]
-    _circuit_open_until: Optional[datetime]
+    _cache: dict[str, tuple[datetime, Any]]
+    _last_valid: dict[str, tuple[datetime, list[CPCBStationObservation]]]
+    _locks: dict[str, asyncio.Lock]
+    _circuit_open_until: datetime | None
 
     if TYPE_CHECKING:
 
@@ -77,8 +77,8 @@ class CPCBTransportMixin:
         )
 
     async def _request_page(
-        self, params: Dict[str, Any]
-    ) -> Tuple[List[Dict[str, Any]], Optional[int]]:
+        self, params: dict[str, Any]
+    ) -> tuple[list[dict[str, Any]], int | None]:
         """Fetch one page with bounded retries. Never logs the credentialed URL."""
         if not self.api_key:
             raise CPCBConfigurationError("DATA_GOV_IN_API_KEY is not configured.")
@@ -148,19 +148,19 @@ class CPCBTransportMixin:
 
     async def _fetch_pages(
         self,
-        filters: Optional[Dict[str, str]] = None,
-        max_pages: Optional[int] = None,
-        page_size: Optional[int] = None,
-    ) -> Tuple[List[Dict[str, Any]], Optional[int]]:
+        filters: dict[str, str] | None = None,
+        max_pages: int | None = None,
+        page_size: int | None = None,
+    ) -> tuple[list[dict[str, Any]], int | None]:
         size = page_size or settings.CPCB_PAGE_SIZE
         pages = max_pages or settings.CPCB_MAX_PAGES
-        records: List[Dict[str, Any]] = []
+        records: list[dict[str, Any]] = []
         seen: set[str] = set()
         offset = 0
-        reported_total: Optional[int] = None
+        reported_total: int | None = None
 
         for _ in range(pages):
-            params: Dict[str, Any] = {"limit": size, "offset": offset}
+            params: dict[str, Any] = {"limit": size, "offset": offset}
             params.update(filters or {})
             page, total = await self._request_page(params)
             reported_total = total if total is not None else reported_total
@@ -182,12 +182,12 @@ class CPCBTransportMixin:
     def _cache_key(self, label: str) -> str:
         return label
 
-    def _cached(self, key: str) -> Optional[Any]:
+    def _cached(self, key: str) -> Any | None:
         entry = self._cache.get(key)
         if not entry:
             return None
         expires_at, value = entry
-        if datetime.now(timezone.utc) >= expires_at:
+        if datetime.now(UTC) >= expires_at:
             self._cache.pop(key, None)
             return None
         if isinstance(value, list) and all(
@@ -197,7 +197,7 @@ class CPCBTransportMixin:
         return value
 
     def _store(self, key: str, value: Any) -> None:
-        expires = datetime.now(timezone.utc) + timedelta(seconds=settings.CPCB_CACHE_TTL_SECONDS)
+        expires = datetime.now(UTC) + timedelta(seconds=settings.CPCB_CACHE_TTL_SECONDS)
         self._cache[key] = (expires, value)
         prune_expired(self._cache, lambda entry: entry[0])
         enforce_limit(self._cache, settings.CACHE_MAX_ENTRIES)
@@ -206,7 +206,7 @@ class CPCBTransportMixin:
             and value
             and all(isinstance(item, CPCBStationObservation) for item in value)
         ):
-            self._last_valid[key] = (datetime.now(timezone.utc), value)
+            self._last_valid[key] = (datetime.now(UTC), value)
             prune_expired(
                 self._last_valid,
                 lambda entry: entry[0] + timedelta(hours=settings.CPCB_LAST_VALID_MAX_HOURS),
@@ -215,9 +215,9 @@ class CPCBTransportMixin:
 
     @staticmethod
     def _as_stale(
-        observations: List[CPCBStationObservation], reason: str
-    ) -> List[CPCBStationObservation]:
-        stale: List[CPCBStationObservation] = []
+        observations: list[CPCBStationObservation], reason: str
+    ) -> list[CPCBStationObservation]:
+        stale: list[CPCBStationObservation] = []
         for observation in observations:
             warnings = [w for w in observation.warnings if w != reason]
             warnings.append(reason)
@@ -228,14 +228,12 @@ class CPCBTransportMixin:
             )
         return stale
 
-    def _previous_valid(self, key: str) -> Optional[List[CPCBStationObservation]]:
+    def _previous_valid(self, key: str) -> list[CPCBStationObservation] | None:
         entry = self._last_valid.get(key)
         if not entry:
             return None
         saved_at, observations = entry
-        if datetime.now(timezone.utc) - saved_at > timedelta(
-            hours=settings.CPCB_LAST_VALID_MAX_HOURS
-        ):
+        if datetime.now(UTC) - saved_at > timedelta(hours=settings.CPCB_LAST_VALID_MAX_HOURS):
             self._last_valid.pop(key, None)
             return None
         return self._as_stale(observations, "Refresh failed; showing the last valid observation.")
@@ -243,7 +241,7 @@ class CPCBTransportMixin:
     def _circuit_is_open(self) -> bool:
         if self._circuit_open_until is None:
             return False
-        if datetime.now(timezone.utc) < self._circuit_open_until:
+        if datetime.now(UTC) < self._circuit_open_until:
             return True
         self._circuit_open_until = None
         return False
@@ -251,7 +249,7 @@ class CPCBTransportMixin:
     def _trip_circuit(self) -> None:
         if self._circuit_open_until is not None:
             return
-        self._circuit_open_until = datetime.now(timezone.utc) + timedelta(
+        self._circuit_open_until = datetime.now(UTC) + timedelta(
             seconds=settings.CPCB_CIRCUIT_BREAKER_SECONDS
         )
         logger.warning(
@@ -269,7 +267,7 @@ class CPCBTransportMixin:
     async def _load_with_fallback(self, key: str, loader) -> Any:
         """Cache + coalesce requests, preserving the last valid data on failure.
 
-        A wall-clock budget bounds retries × pagination so a provider outage can
+        A wall-clock budget bounds retries x pagination so a provider outage can
         never hold up the user-facing request or block downstream providers.
         """
         cached = self._cached(key)

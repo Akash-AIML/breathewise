@@ -5,8 +5,9 @@ checks at read time, and the cap prevents attacker-controlled keys from growing
 memory without limit.
 """
 
-from datetime import datetime, timezone
-from typing import Any, Callable, MutableMapping
+from collections.abc import Callable, MutableMapping
+from datetime import UTC, datetime
+from typing import Any
 
 
 def prune_expired(
@@ -15,7 +16,7 @@ def prune_expired(
     now: datetime | None = None,
 ) -> None:
     """Remove entries whose expiry has passed."""
-    current = now or datetime.now(timezone.utc)
+    current = now or datetime.now(UTC)
     for key, value in list(mapping.items()):
         if expires_at(value) <= current:
             mapping.pop(key, None)

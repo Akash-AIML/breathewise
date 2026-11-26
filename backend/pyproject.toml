@@ -25,12 +25,31 @@ line-length = 100
 target-version = "py312"
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "W"]
-ignore = ["E501"]
+# Comprehensive rule set: pycodestyle, pyflakes, isort, pyupgrade, bugbear,
+# flake8-simplify, flake8-pie, Ruff-specific, perflint, pylint (errors only)
+select = ["E", "F", "I", "W", "UP", "B", "SIM", "PIE", "RUF", "PERF", "PLE"]
+ignore = [
+    "E501",      # line too long — handled by formatter
+    "B008",      # do not perform function calls in default arguments (FastAPI Depends)
+    "SIM108",    # ternary operator — not always more readable
+    "RUF012",    # mutable class variables — Pydantic models use them intentionally
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests legitimately use magic numbers in assertions and direct comparisons
+"tests/**" = ["PLR2004", "PLR0912", "PLR0914", "PLR0915", "S101"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
 
 [tool.mypy]
 python_version = "3.12"
 plugins = ["pydantic.mypy"]
 ignore_missing_imports = true
+strict = false
+warn_unused_ignores = true
+warn_return_any = false
+disallow_untyped_defs = false
 
 

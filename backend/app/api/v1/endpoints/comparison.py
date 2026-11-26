@@ -1,5 +1,4 @@
 import logging
-from typing import List, Optional
 
 from fastapi import APIRouter, HTTPException, Query, status
 
@@ -50,7 +49,7 @@ async def compare_stations(
         )
 
     resolution = await comparison_service.resolve(ids)
-    observations: List[NormalizedObservation] = resolution.observations
+    observations: list[NormalizedObservation] = resolution.observations
     if len(observations) < 2:
         unresolved = ", ".join(resolution.unresolved_ids) or "none"
         raise HTTPException(
@@ -61,7 +60,7 @@ async def compare_stations(
             ),
         )
 
-    differential: Optional[ComparisonDifferential] = None
+    differential: ComparisonDifferential | None = None
     valid_aqi_obs = [o for o in observations if o.calculated_aqi is not None]
     if len(valid_aqi_obs) >= 2:
         sorted_by_aqi = sorted(valid_aqi_obs, key=lambda x: x.calculated_aqi or 0)

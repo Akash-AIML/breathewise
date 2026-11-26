@@ -1,4 +1,4 @@
-from typing import List, Literal, Optional
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -21,11 +21,11 @@ class ChatQueryRequest(BaseModel):
     )
     lat: float = Field(..., ge=-90.0, le=90.0, description="Latitude in decimal degrees")
     lon: float = Field(..., ge=-180.0, le=180.0, description="Longitude in decimal degrees")
-    profile: Optional[HouseholdProfile] = Field(
+    profile: HouseholdProfile | None = Field(
         default_factory=HouseholdProfile,
         description="Household vulnerability and lifestyle profile",
     )
-    history: List[ChatTurn] = Field(
+    history: list[ChatTurn] = Field(
         default_factory=list,
         max_length=6,
         description="Optional recent conversation turns for multi-turn context",
@@ -39,14 +39,14 @@ class ExplanationResponse(BaseModel):
     """
 
     answer: str = Field(..., description="Grounded, personalized natural language response")
-    referenced_aqi: Optional[int] = Field(None, description="CPCB AQI value referenced in response")
-    dominant_pollutant: Optional[PollutantType] = Field(
+    referenced_aqi: int | None = Field(None, description="CPCB AQI value referenced in response")
+    dominant_pollutant: PollutantType | None = Field(
         None, description="Dominant pollutant driving the risk assessment"
     )
     risk_level: RiskClassification = Field(
         ..., description="Deterministic environmental risk classification"
     )
-    approved_actions: List[str] = Field(
+    approved_actions: list[str] = Field(
         default_factory=list, description="List of approved deterministic actions relevant to query"
     )
     scientific_rationale: str = Field(

@@ -4,7 +4,7 @@ These were previously defined in ``test_ai_assistant.py``; keeping them here mak
 them available to every split test module without changing any test bodies.
 """
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 
@@ -47,8 +47,8 @@ def clean_observation() -> NormalizedObservation:
         aqi_category=AQICategory.SATISFACTORY,
         dominant_pollutant=PollutantType.PM10,
         data_quality_status=DataQualityStatus.VERIFIED,
-        measurement_timestamp=datetime.now(timezone.utc),
-        retrieval_timestamp=datetime.now(timezone.utc),
+        measurement_timestamp=datetime.now(UTC),
+        retrieval_timestamp=datetime.now(UTC),
     )
 
 
@@ -79,8 +79,8 @@ def severe_observation() -> NormalizedObservation:
         aqi_category=AQICategory.VERY_POOR,
         dominant_pollutant=PollutantType.PM2_5,
         data_quality_status=DataQualityStatus.VERIFIED,
-        measurement_timestamp=datetime.now(timezone.utc),
-        retrieval_timestamp=datetime.now(timezone.utc),
+        measurement_timestamp=datetime.now(UTC),
+        retrieval_timestamp=datetime.now(UTC),
     )
 
 

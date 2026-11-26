@@ -251,7 +251,6 @@ class TestGeminiModelFailover:
 
         async def capture(query, system_prompt, obs, assessment, actions, model):
             captured["system_prompt"] = system_prompt
-            return None
 
         monkeypatch.setattr(service, "_call_gemini", capture)
         assessment = assess_environmental_risk(clean_observation)

@@ -82,4 +82,4 @@ def calculate_hepa_cadr_m3_hr(area_sqft: int) -> int:
     Formula: CADR = Area (sqft) * 0.0929 m²/sqft * 2.5m ceiling * 5 ACH ≈ Area * 1.16 m³/hr
     """
     cadr = area_sqft * 0.0929 * 2.5 * 5.0
-    return int(round(cadr))
+    return round(cadr)

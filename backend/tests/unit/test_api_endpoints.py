@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -46,8 +46,8 @@ def mock_observation():
         calculated_aqi=117,
         dominant_pollutant=PollutantType.PM2_5,
         data_sufficiency_met=True,
-        measurement_timestamp=datetime.now(timezone.utc),
-        retrieval_timestamp=datetime.now(timezone.utc),
+        measurement_timestamp=datetime.now(UTC),
+        retrieval_timestamp=datetime.now(UTC),
         data_quality_status=DataQualityStatus.VERIFIED,
     )
 

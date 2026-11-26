@@ -1,8 +1,9 @@
 """Data-driven station comparison built from live metadata or honest grid estimates."""
 
 import logging
+from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Iterable, List, Literal, Optional, Tuple
+from typing import Literal
 
 from app.schemas.comparison import (
     ComparisonBasis,
@@ -36,10 +37,10 @@ class ResolvedObservation:
 
 @dataclass(frozen=True)
 class ComparisonResolution:
-    observations: List[NormalizedObservation]
+    observations: list[NormalizedObservation]
     bases: set[LiveBasis]
     sources: set[str]
-    unresolved_ids: List[str]
+    unresolved_ids: list[str]
 
     @property
     def basis(self) -> ComparisonBasis:
@@ -57,10 +58,10 @@ class ComparisonResolution:
 
 
 class ComparisonService:
-    def __init__(self, air_quality_service: Optional[AirQualityService] = None) -> None:
+    def __init__(self, air_quality_service: AirQualityService | None = None) -> None:
         self.air_quality = air_quality_service or AirQualityService()
 
-    async def _live_observations(self) -> List[CPCBStationObservation]:
+    async def _live_observations(self) -> list[CPCBStationObservation]:
         """Fetch live CPCB observations once; degrade silently to grid estimates."""
         try:
             return await self.air_quality.cpcb_adapter.get_station_observations()
@@ -72,25 +73,24 @@ class ComparisonService:
     @staticmethod
     def _live_candidates(
         observations: Iterable[CPCBStationObservation],
-    ) -> List[ComparisonCandidate]:
-        candidates = []
-        for obs in observations:
-            candidates.append(
-                ComparisonCandidate(
-                    id=obs.station_id,
-                    label=obs.station,
-                    city=obs.city,
-                    state=obs.state,
-                    latitude=obs.latitude,
-                    longitude=obs.longitude,
-                    basis="live_station",
-                    source="CPCB/data.gov.in",
-                )
+    ) -> list[ComparisonCandidate]:
+        candidates = [
+            ComparisonCandidate(
+                id=obs.station_id,
+                label=obs.station,
+                city=obs.city,
+                state=obs.state,
+                latitude=obs.latitude,
+                longitude=obs.longitude,
+                basis="live_station",
+                source="CPCB/data.gov.in",
             )
+            for obs in observations
+        ]
         return _dedupe(candidates)
 
     @staticmethod
-    def _grid_candidates() -> List[ComparisonCandidate]:
+    def _grid_candidates() -> list[ComparisonCandidate]:
         return [
             ComparisonCandidate(
                 id=f"{GRID_ID_PREFIX}{station.station_id}",
@@ -105,7 +105,7 @@ class ComparisonService:
             for station in INDIAN_CITIES_REGISTRY
         ]
 
-    async def get_presets(self) -> Tuple[List[ComparisonPreset], str, str]:
+    async def get_presets(self) -> tuple[list[ComparisonPreset], str, str]:
         """Build comparison presets from current live stations, or labelled grid coordinates."""
         live = await self._live_observations()
         if live:
@@ -129,7 +129,7 @@ class ComparisonService:
             ),
         )
 
-    async def resolve(self, ids: List[str]) -> ComparisonResolution:
+    async def resolve(self, ids: list[str]) -> ComparisonResolution:
         live = await self._live_observations()
         live_by_id = {obs.station_id: obs for obs in live}
         grid_by_id = {candidate.id: candidate for candidate in self._grid_candidates()}
@@ -139,8 +139,8 @@ class ComparisonService:
             for candidate in self._grid_candidates()
         }
 
-        resolved: List[ResolvedObservation] = []
-        unresolved: List[str] = []
+        resolved: list[ResolvedObservation] = []
+        unresolved: list[str] = []
         for raw_id in ids:
             station_id = raw_id.strip()
             if station_id in live_by_id:
@@ -195,7 +195,7 @@ class ComparisonService:
         )
 
 
-def _dedupe(candidates: List[ComparisonCandidate]) -> List[ComparisonCandidate]:
+def _dedupe(candidates: list[ComparisonCandidate]) -> list[ComparisonCandidate]:
     seen = set()
     result = []
     for candidate in candidates:
@@ -206,7 +206,7 @@ def _dedupe(candidates: List[ComparisonCandidate]) -> List[ComparisonCandidate]:
     return result
 
 
-def _first(candidates: List[ComparisonCandidate], predicate) -> Optional[ComparisonCandidate]:
+def _first(candidates: list[ComparisonCandidate], predicate) -> ComparisonCandidate | None:
     return next((candidate for candidate in candidates if predicate(candidate)), None)
 
 
@@ -217,16 +217,16 @@ def _matches_city(candidate: ComparisonCandidate, city_key: str) -> bool:
 
 
 def _build_presets(
-    candidates: List[ComparisonCandidate], basis: LiveBasis
-) -> List[ComparisonPreset]:
+    candidates: list[ComparisonCandidate], basis: LiveBasis
+) -> list[ComparisonPreset]:
     prefix = "Live station" if basis == "live_station" else "Grid estimate"
     source = "CPCB/data.gov.in" if basis == "live_station" else "fallback_registry_coordinate_grid"
-    presets: List[ComparisonPreset] = []
+    presets: list[ComparisonPreset] = []
 
     def add(
         key: str,
         name: str,
-        picked: List[ComparisonCandidate],
+        picked: list[ComparisonCandidate],
         description: str,
     ) -> None:
         if len(picked) < 2 or len({item.id for item in picked}) != len(picked):

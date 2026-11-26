@@ -36,13 +36,13 @@ async def get_air_quality(
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=str(e),
-        )
+        ) from e
     except Exception as e:
         logger.error("Error retrieving air quality for (%s, %s): %s", lat, lon, str(e))
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to retrieve air quality data. Please retry shortly.",
-        )
+        ) from e
 
     if not observation:
         return AirQualityResponse(

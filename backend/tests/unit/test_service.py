@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -37,12 +37,12 @@ async def test_cache_uses_precise_coordinates_and_returns_isolated_copy():
             latitude=28.6289,
             longitude=77.2407,
         ),
-        measurement_timestamp=datetime.now(timezone.utc),
-        retrieval_timestamp=datetime.now(timezone.utc),
+        measurement_timestamp=datetime.now(UTC),
+        retrieval_timestamp=datetime.now(UTC),
         data_quality_status=DataQualityStatus.VERIFIED,
     )
     service._cache[service._get_cache_key(28.6289, 77.2407)] = CacheEntry(
-        observation, datetime.now(timezone.utc) + timedelta(minutes=5)
+        observation, datetime.now(UTC) + timedelta(minutes=5)
     )
 
     result = await service.get_air_quality_for_coordinates(28.6289, 77.2407)

@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -9,7 +9,7 @@ from app.core.config import settings
 from app.schemas.observation import PollutantType
 from app.services.air_quality_service import INDIAN_CITIES_REGISTRY
 
-_CPCB_TEST_TIMESTAMP = datetime.now(timezone.utc).isoformat()
+_CPCB_TEST_TIMESTAMP = datetime.now(UTC).isoformat()
 
 
 def _cpcb_record(pollutant_id: str, avg: str, **overrides):

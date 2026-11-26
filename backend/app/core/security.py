@@ -4,7 +4,7 @@ import math
 import time
 from abc import ABC, abstractmethod
 from collections import defaultdict
-from typing import Any, Dict, List
+from typing import Any
 
 from fastapi import Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -47,7 +47,7 @@ class RateLimitStore(ABC):
     is only meaningful when ``allowed`` is False.
     """
 
-    async def setup(self) -> None:
+    async def setup(self) -> None:  # noqa: B027 — optional lifecycle hook for stores needing lazy init
         """Optional lazy initialization hook (no-op for stores needing none)."""
 
     @abstractmethod
@@ -64,7 +64,7 @@ class InMemoryRateLimitStore(RateLimitStore):
 
     def __init__(self) -> None:
         # client identifier -> list of request timestamps
-        self.clients: Dict[str, List[float]] = defaultdict(list)
+        self.clients: dict[str, list[float]] = defaultdict(list)
 
     async def check(self, key: str, max_requests: int, window_seconds: int) -> tuple[bool, int]:
         now = time.time()
@@ -193,8 +193,8 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         max_requests: int = 120,
         window_seconds: int = 60,
         store: RateLimitStore | None = None,
-        path_limits: Dict[str, int] | None = None,
-        trusted_proxies: List[str] | None = None,
+        path_limits: dict[str, int] | None = None,
+        trusted_proxies: list[str] | None = None,
     ):
         super().__init__(app)
         self.max_requests = max_requests
@@ -235,7 +235,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         return peer
 
     @property
-    def clients(self) -> Dict[str, List[float]]:
+    def clients(self) -> dict[str, list[float]]:
         """Backward-compatible view of the legacy in-memory counter dict."""
         return self.store.clients if isinstance(self.store, InMemoryRateLimitStore) else {}
 

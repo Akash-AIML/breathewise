@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -10,10 +10,10 @@ class CPCBPollutantStats(BaseModel):
     """Validated min/max/avg values for one pollutant at one station/time."""
 
     pollutant_id: str = Field(..., description="Original pollutant_id as reported by the provider")
-    min: Optional[float] = Field(None, ge=0.0)
-    max: Optional[float] = Field(None, ge=0.0)
-    avg: Optional[float] = Field(None, ge=0.0)
-    unit: Optional[str] = Field(None, description="Only set when explicitly present in source data")
+    min: float | None = Field(None, ge=0.0)
+    max: float | None = Field(None, ge=0.0)
+    avg: float | None = Field(None, ge=0.0)
+    unit: str | None = Field(None, description="Only set when explicitly present in source data")
 
 
 class CPCBStationObservation(BaseModel):
@@ -28,14 +28,14 @@ class CPCBStationObservation(BaseModel):
     station_id: str
     latitude: float
     longitude: float
-    distance_km: Optional[float] = Field(None, ge=0.0)
+    distance_km: float | None = Field(None, ge=0.0)
     last_update: datetime = Field(..., description="Source observation timestamp (ISO-8601)")
     retrieval_timestamp: datetime = Field(
         ..., description="When BreatheWise retrieved the record from data.gov.in"
     )
     freshness: DataQualityStatus
-    pollutants: Dict[str, CPCBPollutantStats] = Field(default_factory=dict)
-    warnings: List[str] = Field(default_factory=list)
+    pollutants: dict[str, CPCBPollutantStats] = Field(default_factory=dict)
+    warnings: list[str] = Field(default_factory=list)
 
     @field_validator("latitude")
     @classmethod
@@ -62,18 +62,18 @@ class CPCBStationObservation(BaseModel):
 class CPCBObservationsResponse(BaseModel):
     success: bool = True
     count: int = Field(..., ge=0)
-    data: List[CPCBStationObservation] = Field(default_factory=list)
-    selected_station_id: Optional[str] = None
-    message: Optional[str] = None
+    data: list[CPCBStationObservation] = Field(default_factory=list)
+    selected_station_id: str | None = None
+    message: str | None = None
 
 
 class CPCBObservationResponse(BaseModel):
     success: bool = True
-    data: Optional[CPCBStationObservation] = None
-    message: Optional[str] = None
+    data: CPCBStationObservation | None = None
+    message: str | None = None
 
 
 class CPCBFiltersResponse(BaseModel):
     success: bool = True
-    data: Dict[str, Dict[str, Any]] = Field(default_factory=dict)
-    message: Optional[str] = None
+    data: dict[str, dict[str, Any]] = Field(default_factory=dict)
+    message: str | None = None

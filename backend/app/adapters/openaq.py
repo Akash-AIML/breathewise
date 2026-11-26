@@ -1,6 +1,6 @@
 import logging
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 import httpx
 
@@ -16,7 +16,7 @@ from app.schemas.observation import (
 
 logger = logging.getLogger(__name__)
 
-OPENAQ_PARAM_MAP: Dict[str, PollutantType] = {
+OPENAQ_PARAM_MAP: dict[str, PollutantType] = {
     "pm25": PollutantType.PM2_5,
     "pm10": PollutantType.PM10,
     "no2": PollutantType.NO2,
@@ -37,7 +37,7 @@ class OpenAQAdapter(AirQualityAdapter):
 
     BASE_URL = "https://api.openaq.org/v3"
 
-    def __init__(self, api_key: Optional[str] = None):
+    def __init__(self, api_key: str | None = None):
         self.api_key = api_key or settings.OPENAQ_API_KEY
 
     @property
@@ -50,7 +50,7 @@ class OpenAQAdapter(AirQualityAdapter):
 
     async def fetch_by_coordinates(
         self, latitude: float, longitude: float
-    ) -> Optional[NormalizedObservation]:
+    ) -> NormalizedObservation | None:
         if not self.api_key:
             logger.info("OpenAQAdapter: No OPENAQ_API_KEY configured; skipping v3 endpoint.")
             return None
@@ -97,12 +97,12 @@ class OpenAQAdapter(AirQualityAdapter):
             return None
 
     async def search_stations(
-        self, city: Optional[str] = None, state: Optional[str] = None
-    ) -> List[StationMetadata]:
+        self, city: str | None = None, state: str | None = None
+    ) -> list[StationMetadata]:
         if not self.api_key:
             return []
         headers = {"X-API-Key": self.api_key}
-        params: Dict[str, Any] = {"country": "IN", "limit": 50}
+        params: dict[str, Any] = {"country": "IN", "limit": 50}
         if city:
             params["city"] = city
         try:
@@ -132,10 +132,10 @@ class OpenAQAdapter(AirQualityAdapter):
             return []
 
     def _parse_openaq_data(
-        self, loc: Dict[str, Any], meas_data: List[Dict[str, Any]], lat: float, lon: float
-    ) -> Optional[NormalizedObservation]:
-        readings: Dict[PollutantType, NormalizedPollutantReading] = {}
-        reported_timestamps: List[datetime] = []
+        self, loc: dict[str, Any], meas_data: list[dict[str, Any]], lat: float, lon: float
+    ) -> NormalizedObservation | None:
+        readings: dict[PollutantType, NormalizedPollutantReading] = {}
+        reported_timestamps: list[datetime] = []
 
         for m in meas_data:
             param = str(m.get("parameter", "")).lower()
@@ -169,7 +169,7 @@ class OpenAQAdapter(AirQualityAdapter):
             if dt_str:
                 try:
                     dt = datetime.fromisoformat(dt_str.replace("Z", "+00:00"))
-                    reported_timestamps.append(dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc))
+                    reported_timestamps.append(dt if dt.tzinfo else dt.replace(tzinfo=UTC))
                 except (TypeError, ValueError):
                     continue
 
@@ -200,7 +200,7 @@ class OpenAQAdapter(AirQualityAdapter):
             aqi_category=calc_result.category,
             data_sufficiency_met=calc_result.data_sufficiency_met,
             measurement_timestamp=latest_ts,
-            retrieval_timestamp=datetime.now(timezone.utc),
+            retrieval_timestamp=datetime.now(UTC),
             data_quality_status=calc_result.quality_status,
             notes=calc_result.reason,
         )

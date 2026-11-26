@@ -1,9 +1,7 @@
 import asyncio
 import logging
-from typing import Optional
 
-# Retained as the monkeypatch target used by the provider failover tests.
-import httpx  # noqa: F401
+import httpx  # noqa: F401 — retained as the monkeypatch target for provider failover tests
 
 from app.core.config import settings
 from app.core.policy_engine import (
@@ -62,7 +60,7 @@ class LLMAssistantService:
         query: str,
         observation: NormalizedObservation,
         profile: HouseholdProfile,
-        history: Optional[list] = None,
+        history: list | None = None,
     ) -> ExplanationResponse:
         """
         Generates grounded explanation for user query using Stage 1 assessment and Stage 2 policies.
@@ -105,8 +103,8 @@ class LLMAssistantService:
         assessment: EnvironmentalAssessment,
         plan: PersonalizedPlan,
         profile: HouseholdProfile,
-        history: Optional[list] = None,
-    ) -> Optional[ExplanationResponse]:
+        history: list | None = None,
+    ) -> ExplanationResponse | None:
         """
         Attempts structured JSON completion via Groq or Gemini server-side APIs.
         Validates output strictly with Pydantic.
@@ -217,7 +215,7 @@ class LLMAssistantService:
         return actions
 
     @staticmethod
-    def _answer_is_grounded(answer: str, validated_aqi: Optional[int]) -> bool:
+    def _answer_is_grounded(answer: str, validated_aqi: int | None) -> bool:
         """Reject LLM answers that assert an AQI other than the validated value."""
         return llm_safety.answer_is_grounded(answer, validated_aqi)
 
@@ -228,7 +226,7 @@ class LLMAssistantService:
         obs: NormalizedObservation,
         assessment: EnvironmentalAssessment,
         approved_actions: list[str],
-    ) -> Optional[ExplanationResponse]:
+    ) -> ExplanationResponse | None:
         answer = parsed.get("answer")
         rationale = parsed.get("scientific_rationale")
         if not isinstance(answer, str) or not answer.strip():
@@ -271,7 +269,7 @@ class LLMAssistantService:
         )
 
     @staticmethod
-    def _parse_json_object(text: str) -> Optional[dict]:
+    def _parse_json_object(text: str) -> dict | None:
         """Parse a JSON object from a model reply, tolerating code fences/prose."""
         return _parse_json_object(text)
 
@@ -282,7 +280,7 @@ class LLMAssistantService:
         obs: NormalizedObservation,
         assessment: EnvironmentalAssessment,
         approved_actions: list[str],
-    ) -> Optional[ExplanationResponse]:
+    ) -> ExplanationResponse | None:
         return await call_groq(self, query, system_prompt, obs, assessment, approved_actions)
 
     async def _call_gemini(
@@ -293,7 +291,7 @@ class LLMAssistantService:
         assessment: EnvironmentalAssessment,
         approved_actions: list[str],
         model: str,
-    ) -> Optional[ExplanationResponse]:
+    ) -> ExplanationResponse | None:
         return await call_gemini(
             self, query, system_prompt, obs, assessment, approved_actions, model
         )

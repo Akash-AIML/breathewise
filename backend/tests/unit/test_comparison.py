@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock
 
 import pytest
@@ -28,7 +28,7 @@ def _cpcb_observation(
     city: str = "Delhi",
     state: str = "Delhi",
 ):
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     pollutants = {
         "PM2.5": CPCBPollutantStats(pollutant_id="PM2.5", min=10, max=80, avg=45),
         "PM10": CPCBPollutantStats(pollutant_id="PM10", min=20, max=140, avg=85),

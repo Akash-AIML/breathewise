@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import re
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 import httpx
 
@@ -25,7 +25,7 @@ class _LLMPermanentError(Exception):
     """Invalid credentials: retrying other models with the same key cannot help."""
 
 
-def parse_json_object(text: str) -> Optional[dict]:
+def parse_json_object(text: str) -> dict | None:
     """Parse a JSON object from a model reply, tolerating code fences/prose."""
     if not isinstance(text, str) or not text.strip():
         return None
@@ -53,7 +53,7 @@ async def call_groq(
     obs: NormalizedObservation,
     assessment: EnvironmentalAssessment,
     approved_actions: list[str],
-) -> Optional[ExplanationResponse]:
+) -> ExplanationResponse | None:
     """One-shot Groq completion, validated through the service's grounding rules."""
     url = "https://api.groq.com/openai/v1/chat/completions"
     headers = {
@@ -93,7 +93,7 @@ async def call_gemini(
     assessment: EnvironmentalAssessment,
     approved_actions: list[str],
     model: str,
-) -> Optional[ExplanationResponse]:
+) -> ExplanationResponse | None:
     """One model in the configured free-tier chain. Never logs the API key."""
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
     headers = {"x-goog-api-key": service.gemini_api_key, "Content-Type": "application/json"}

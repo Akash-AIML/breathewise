@@ -1,6 +1,6 @@
 """List endpoints must enforce a server-side response budget."""
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock
 
 import pytest
@@ -15,7 +15,7 @@ from app.schemas.observation import DataQualityStatus
 
 
 def _cpcb_observation() -> CPCBStationObservation:
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     return CPCBStationObservation(
         state="Tamil Nadu",
         city="Chennai",

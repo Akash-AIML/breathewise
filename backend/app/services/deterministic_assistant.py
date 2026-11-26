@@ -53,7 +53,7 @@ def generate_deterministic_fallback(
         answer = (
             f"At {obs.station.station_name} (AQI {aqi}, {label(obs.aqi_category)}), your daily choices create a measurable direct impact:\n"
             f"1. Switching a 16 km/day solo car commute (150 g CO₂/km) to Electric Metro (14 g CO₂/km) cuts ~48 kg CO₂/month (~566 kg/year) "
-            f"and reduces roadside PM2.5 inhalation by 50–70% inside filtered carriages.\n"
+            f"and reduces roadside PM2.5 inhalation by 50-70% inside filtered carriages.\n"
             f"2. Running a {cadr} m³/hr True HEPA purifier (sized for your {profile.home_area_sqft or 600} sq.ft. home at 5 ACH) "
             f"with sealed window drafts and kitchen chimney exhaust cuts indoor fine particulate exposure substantially compared to ambient air."
         )
@@ -68,14 +68,14 @@ def generate_deterministic_fallback(
     elif any(w in q for w in ("winter", "smog", "inversion", "stubble", "fog")):
         answer = (
             f"During severe winter smog (current AQI at {obs.station.station_name}: {aqi}), cold ground air forms a thermal inversion lid "
-            "between 6:00–9:30 AM and again after 6:30 PM, trapping PM2.5 and combustion soot at breathing height. "
-            "Schedule essential errands or brief ventilation for 1:00–4:00 PM when solar warming lifts the boundary layer, "
+            "between 6:00-9:30 AM and again after 6:30 PM, trapping PM2.5 and combustion soot at breathing height. "
+            "Schedule essential errands or brief ventilation for 1:00-4:00 PM when solar warming lifts the boundary layer, "
             "wear a snug N95/FFP2 respirator outdoors, and keep indoor HEPA + kitchen exhaust running."
         )
         rationale = "Diurnal boundary-layer meteorology: winter inversions halve mixing height in early morning and late evening."
         actions = [
-            "Avoid outdoor exercise between 6:00–9:30 AM and after 6:30 PM.",
-            "Keep windows sealed during inversion hours; ventilate briefly only 1:00–4:00 PM if AQI < 200.",
+            "Avoid outdoor exercise between 6:00-9:30 AM and after 6:30 PM.",
+            "Keep windows sealed during inversion hours; ventilate briefly only 1:00-4:00 PM if AQI < 200.",
             "Share community/school alerts to halt open biomass burning and move morning assemblies indoors.",
         ]
 

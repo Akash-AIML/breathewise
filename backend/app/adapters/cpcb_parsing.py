@@ -1,7 +1,7 @@
 import logging
 import re
-from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional, Tuple
+from datetime import UTC, datetime, timedelta
+from typing import Any
 from zoneinfo import ZoneInfo
 
 from app.core.aqi_calculator import compute_official_cpcb_aqi
@@ -18,7 +18,7 @@ from app.schemas.observation import (
 
 logger = logging.getLogger(__name__)
 
-CPCB_POLLUTANT_MAP: Dict[str, PollutantType] = {
+CPCB_POLLUTANT_MAP: dict[str, PollutantType] = {
     "pm2.5": PollutantType.PM2_5,
     "pm25": PollutantType.PM2_5,
     "pm10": PollutantType.PM10,
@@ -39,7 +39,7 @@ class CPCBParsingMixin:
     """Record parsing, freshness checks, and normalization for CPCBAdapter."""
 
     @staticmethod
-    def _parse_number(value: Any) -> Optional[float]:
+    def _parse_number(value: Any) -> float | None:
         if value is None or isinstance(value, bool):
             return None
         if isinstance(value, (int, float)):
@@ -57,7 +57,7 @@ class CPCBParsingMixin:
         return number
 
     @staticmethod
-    def _parse_timestamp(value: Any) -> Optional[datetime]:
+    def _parse_timestamp(value: Any) -> datetime | None:
         if not value or not isinstance(value, str):
             return None
         text = value.strip()
@@ -74,7 +74,7 @@ class CPCBParsingMixin:
         return parsed if parsed.tzinfo else parsed.replace(tzinfo=_IST)
 
     @staticmethod
-    def _station_slug(record: Dict[str, Any]) -> str:
+    def _station_slug(record: dict[str, Any]) -> str:
         station = str(record.get("station", "unknown"))
         city = str(record.get("city", "unknown"))
         state = str(record.get("state", "unknown"))
@@ -82,7 +82,7 @@ class CPCBParsingMixin:
         return f"cpcb_{_SLUG.sub('_', raw).strip('_')}"
 
     @staticmethod
-    def _grouping_key(record: Dict[str, Any], timestamp: datetime) -> Tuple[Any, ...]:
+    def _grouping_key(record: dict[str, Any], timestamp: datetime) -> tuple[Any, ...]:
         return (
             str(record.get("station", "")).strip().lower(),
             str(record.get("city", "")).strip().lower(),
@@ -93,11 +93,11 @@ class CPCBParsingMixin:
         )
 
     @staticmethod
-    def _freshness(timestamp: Optional[datetime]) -> Tuple[DataQualityStatus, Optional[str]]:
+    def _freshness(timestamp: datetime | None) -> tuple[DataQualityStatus, str | None]:
         if timestamp is None:
             return DataQualityStatus.UNAVAILABLE, "No valid source timestamp."
-        now = datetime.now(timezone.utc)
-        age = now - timestamp.astimezone(timezone.utc)
+        now = datetime.now(UTC)
+        age = now - timestamp.astimezone(UTC)
         if age < timedelta(minutes=-5):
             return DataQualityStatus.UNAVAILABLE, "Source timestamp is in the future."
         if age <= timedelta(hours=settings.CPCB_FRESH_HOURS):
@@ -114,10 +114,10 @@ class CPCBParsingMixin:
             warnings.append(warning)
         return observation.model_copy(update={"freshness": status, "warnings": warnings})
 
-    def parse_records(self, records: List[Dict[str, Any]]) -> List[CPCBStationObservation]:
+    def parse_records(self, records: list[dict[str, Any]]) -> list[CPCBStationObservation]:
         """Group raw pollutant rows into station observations at one timestamp."""
-        grouped: Dict[Tuple[Any, ...], CPCBStationObservation] = {}
-        retrieval_time = datetime.now(timezone.utc)
+        grouped: dict[tuple[Any, ...], CPCBStationObservation] = {}
+        retrieval_time = datetime.now(UTC)
 
         for record in records:
             if not isinstance(record, dict):
@@ -188,11 +188,11 @@ class CPCBParsingMixin:
     def to_normalized(
         self,
         observation: CPCBStationObservation,
-        user_lat: Optional[float] = None,
-        user_lon: Optional[float] = None,
-        distance: Optional[float] = None,
+        user_lat: float | None = None,
+        user_lon: float | None = None,
+        distance: float | None = None,
     ) -> NormalizedObservation:
-        readings: Dict[str, NormalizedPollutantReading] = {}
+        readings: dict[str, NormalizedPollutantReading] = {}
         for pollutant_key, stats in observation.pollutants.items():
             if stats.avg is None:
                 continue

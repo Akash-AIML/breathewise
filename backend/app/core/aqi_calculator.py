@@ -1,5 +1,4 @@
 import math
-from typing import Dict, List, Optional, Tuple
 
 from app.schemas.observation import (
     AQICategory,
@@ -10,7 +9,7 @@ from app.schemas.observation import (
 
 # CPCB Official Breakpoints: List of (B_Lo, B_Hi, I_Lo, I_Hi)
 # CO is in mg/m3; all other pollutants are in µg/m3
-CPCB_BREAKPOINTS: Dict[PollutantType, List[Tuple[float, float, int, int]]] = {
+CPCB_BREAKPOINTS: dict[PollutantType, list[tuple[float, float, int, int]]] = {
     PollutantType.PM10: [
         (0.0, 50.0, 0, 50),
         (51.0, 100.0, 51, 100),
@@ -78,7 +77,7 @@ CPCB_BREAKPOINTS: Dict[PollutantType, List[Tuple[float, float, int, int]]] = {
 }
 
 
-def calculate_sub_index(pollutant: PollutantType, concentration: float) -> Optional[int]:
+def calculate_sub_index(pollutant: PollutantType, concentration: float) -> int | None:
     """Calculate the CPCB sub-index for a single pollutant using linear interpolation."""
     if concentration < 0.0 or math.isnan(concentration):
         return None
@@ -129,13 +128,13 @@ def get_aqi_category(aqi_value: int) -> AQICategory:
 class AQICalculatorResult:
     def __init__(
         self,
-        aqi: Optional[int],
-        dominant_pollutant: Optional[PollutantType],
-        category: Optional[AQICategory],
-        sub_indices: Dict[PollutantType, int],
+        aqi: int | None,
+        dominant_pollutant: PollutantType | None,
+        category: AQICategory | None,
+        sub_indices: dict[PollutantType, int],
         data_sufficiency_met: bool,
         quality_status: DataQualityStatus,
-        reason: Optional[str] = None,
+        reason: str | None = None,
     ):
         self.aqi = aqi
         self.dominant_pollutant = dominant_pollutant
@@ -147,7 +146,7 @@ class AQICalculatorResult:
 
 
 def compute_official_cpcb_aqi(
-    readings: Dict[PollutantType, NormalizedPollutantReading],
+    readings: dict[PollutantType, NormalizedPollutantReading],
 ) -> AQICalculatorResult:
     """
     Computes official CPCB AQI adhering strictly to CPCB regulations:
@@ -158,7 +157,7 @@ def compute_official_cpcb_aqi(
     3. Overall AQI = max(sub_indices).
     4. Dominant pollutant = pollutant with the highest sub-index.
     """
-    sub_indices: Dict[PollutantType, int] = {}
+    sub_indices: dict[PollutantType, int] = {}
 
     for pollutant, reading in readings.items():
         if reading.value is not None and not math.isnan(reading.value) and reading.value >= 0.0:

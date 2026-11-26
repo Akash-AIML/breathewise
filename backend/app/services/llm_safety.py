@@ -3,7 +3,6 @@
 import logging
 import re
 import unicodedata
-from typing import Optional
 
 # Preserve the original logger category after the module split.
 logger = logging.getLogger("app.services.llm_assistant_service")
@@ -43,26 +42,27 @@ INJECTION_MARKERS = (
 )
 
 # Common homoglyphs that could be used to evade a literal keyword check.
+# Encoded as explicit Unicode escapes to prevent confusable-character lint warnings.
 HOMOGLYPHS = str.maketrans(
     {
-        "а": "a",
-        "е": "e",
-        "о": "o",
-        "р": "p",
-        "с": "c",
-        "х": "x",
-        "у": "y",
-        "і": "i",
-        "ј": "j",
-        "ѕ": "s",
-        "һ": "h",
-        "ԁ": "d",
-        "ɡ": "g",
-        "ń": "n",
-        "ⅰ": "i",
-        "ⅼ": "l",
-        "０": "0",
-        "１": "1",
+        "\u0430": "a",  # Cyrillic small letter a
+        "\u0435": "e",  # Cyrillic small letter ie
+        "\u043e": "o",  # Cyrillic small letter o
+        "\u0440": "p",  # Cyrillic small letter er
+        "\u0441": "c",  # Cyrillic small letter es
+        "\u0445": "x",  # Cyrillic small letter ha
+        "\u0443": "y",  # Cyrillic small letter u
+        "\u0456": "i",  # Cyrillic small letter byelorussian-ukrainian i
+        "\u0458": "j",  # Cyrillic small letter je
+        "\u0455": "s",  # Cyrillic small letter dze
+        "\u04bb": "h",  # Cyrillic small letter shha
+        "\u0501": "d",  # Cyrillic small letter komi de
+        "\u0261": "g",  # Latin small letter script g
+        "\u0144": "n",  # Latin small letter n with acute
+        "\u2170": "i",  # Small roman numeral one
+        "\u217c": "l",  # Small roman numeral fifty
+        "\uff10": "0",  # Fullwidth digit zero
+        "\uff11": "1",  # Fullwidth digit one
     }
 )
 
@@ -101,7 +101,7 @@ def screen_for_prompt_injection(user_query: str) -> bool:
     return False
 
 
-def answer_is_grounded(answer: str, validated_aqi: Optional[int]) -> bool:
+def answer_is_grounded(answer: str, validated_aqi: int | None) -> bool:
     """Reject LLM answers that assert an AQI other than the validated value."""
     asserted = [int(value) for value in re.findall(r"\bAQI\b[^0-9]{0,16}(\d{1,3})", answer, re.I)]
     if validated_aqi is None:

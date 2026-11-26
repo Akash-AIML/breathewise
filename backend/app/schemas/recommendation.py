@@ -1,6 +1,6 @@
-from datetime import datetime, timezone
-from enum import Enum
-from typing import List, Literal, Optional
+from datetime import UTC, datetime
+from enum import StrEnum
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -8,7 +8,7 @@ from app.schemas.observation import AQICategory, DataQualityStatus, PollutantTyp
 from app.schemas.profile import HouseholdProfile
 
 
-class RiskClassification(str, Enum):
+class RiskClassification(StrEnum):
     LOW = "low"
     MODERATE = "moderate"
     HIGH = "high"
@@ -23,9 +23,9 @@ class EnvironmentalAssessment(BaseModel):
     """
 
     risk_level: RiskClassification
-    aqi: Optional[int] = None
-    category: Optional[AQICategory] = None
-    dominant_pollutant: Optional[PollutantType] = None
+    aqi: int | None = None
+    category: AQICategory | None = None
+    dominant_pollutant: PollutantType | None = None
     data_quality: DataQualityStatus
     confidence: float = Field(..., ge=0.0, le=1.0)
     is_stale: bool = False
@@ -36,7 +36,7 @@ class RecommendationItem(BaseModel):
     id: str
     category: Literal["planner", "indoor", "commute", "sustainability", "protective"]
     title: str
-    time_of_day: Optional[Literal["morning", "afternoon", "evening", "all_day"]] = None
+    time_of_day: Literal["morning", "afternoon", "evening", "all_day"] | None = None
     action: str
     priority: Literal["critical", "high", "medium", "low"]
     reason: str
@@ -44,7 +44,7 @@ class RecommendationItem(BaseModel):
     expected_impact: Literal[
         "positive_exposure_reduction", "positive_emission_reduction", "balanced"
     ]
-    limitations: Optional[str] = None
+    limitations: str | None = None
 
 
 class IndoorGuidance(BaseModel):
@@ -52,12 +52,12 @@ class IndoorGuidance(BaseModel):
     Module 5: Evidence-based domestic indoor air quality guidance.
     """
 
-    hepa_sizing_cadr_m3_hr: Optional[int] = None
+    hepa_sizing_cadr_m3_hr: int | None = None
     hepa_sizing_explanation: str
-    filter_maintenance_tips: List[str]
+    filter_maintenance_tips: list[str]
     ventilation_advice: str
-    cooking_smoke_precautions: List[str]
-    practical_low_cost_precautions: List[str]
+    cooking_smoke_precautions: list[str]
+    practical_low_cost_precautions: list[str]
     houseplant_scientific_disclaimer: str
 
 
@@ -70,7 +70,7 @@ class SustainableAlternative(BaseModel):
     emission_factor_g_co2_per_km: float
     estimated_emission_reduction_pct: float
     personal_exposure_mitigation: str
-    condition_dependent_note: Optional[str] = None
+    condition_dependent_note: str | None = None
 
 
 class PersonalizedPlan(BaseModel):
@@ -80,9 +80,9 @@ class PersonalizedPlan(BaseModel):
 
     environmental_assessment: EnvironmentalAssessment
     household_profile: HouseholdProfile
-    morning_recommendations: List[RecommendationItem]
-    afternoon_recommendations: List[RecommendationItem]
-    evening_recommendations: List[RecommendationItem]
+    morning_recommendations: list[RecommendationItem]
+    afternoon_recommendations: list[RecommendationItem]
+    evening_recommendations: list[RecommendationItem]
     indoor_guidance: IndoorGuidance
-    sustainable_alternatives: List[SustainableAlternative]
-    generated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    sustainable_alternatives: list[SustainableAlternative]
+    generated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))

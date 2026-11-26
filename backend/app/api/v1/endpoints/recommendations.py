@@ -1,5 +1,4 @@
 import logging
-from typing import List, Optional
 
 from fastapi import APIRouter, HTTPException, Query, Response, status
 from pydantic import BaseModel, Field
@@ -26,7 +25,7 @@ air_quality_service = AirQualityService()
 class PlanRequest(BaseModel):
     lat: float = Field(..., ge=-90.0, le=90.0, description="Latitude in decimal degrees")
     lon: float = Field(..., ge=-180.0, le=180.0, description="Longitude in decimal degrees")
-    profile: Optional[HouseholdProfile] = Field(
+    profile: HouseholdProfile | None = Field(
         default_factory=HouseholdProfile,
         description="Optional household demographic and preference profile",
     )
@@ -59,7 +58,7 @@ async def generate_plan(request: PlanRequest, response: Response) -> Personalize
 @router.get("/recommendations/indoor", response_model=IndoorGuidance)
 async def get_indoor_guidance(
     area_sqft: int = Query(600, ge=100, le=10000, description="Home carpet area in sq.ft."),
-    aqi: Optional[int] = Query(None, ge=0, le=1000, description="Optional current ambient AQI"),
+    aqi: int | None = Query(None, ge=0, le=1000, description="Optional current ambient AQI"),
 ) -> IndoorGuidance:
     """
     MODULE 5: Returns domestic HEPA sizing CADR, maintenance rules,
@@ -71,11 +70,11 @@ async def get_indoor_guidance(
 
 @router.get(
     "/recommendations/sustainable-alternatives",
-    response_model=List[SustainableAlternative],
+    response_model=list[SustainableAlternative],
 )
 async def get_sustainable_alternatives(
-    aqi: Optional[int] = Query(None, ge=0, le=1000, description="Optional current ambient AQI"),
-) -> List[SustainableAlternative]:
+    aqi: int | None = Query(None, ge=0, le=1000, description="Optional current ambient AQI"),
+) -> list[SustainableAlternative]:
     """
     MODULE 6: Returns documented sustainable transit modes with verified Indian emission factors
     and personal health exposure trade-off assessments.

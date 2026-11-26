@@ -1,5 +1,3 @@
-from typing import List, Optional
-
 from app.core.policy_guidance import (
     generate_indoor_guidance,
     generate_sustainable_alternatives,
@@ -17,9 +15,9 @@ from app.schemas.recommendation import (
 
 
 def _build_evening_recommendations(
-    aqi: Optional[int], profile: HouseholdProfile
-) -> List[RecommendationItem]:
-    evening_items: List[RecommendationItem] = []
+    aqi: int | None, profile: HouseholdProfile
+) -> list[RecommendationItem]:
+    evening_items: list[RecommendationItem] = []
 
     # --- EVENING RECOMMENDATIONS ---
     # Evening rush hour traffic + cooling temperature triggers evening smoke & particulate spike
@@ -115,11 +113,11 @@ def generate_personalized_plan(
         or profile.has_cardiovascular_sensitivity
     )
 
-    morning_items: List[RecommendationItem] = _build_morning_recommendations(
+    morning_items: list[RecommendationItem] = _build_morning_recommendations(
         aqi, profile, is_vulnerable
     )
-    afternoon_items: List[RecommendationItem] = _build_afternoon_recommendations(aqi, profile)
-    evening_items: List[RecommendationItem] = _build_evening_recommendations(aqi, profile)
+    afternoon_items: list[RecommendationItem] = _build_afternoon_recommendations(aqi, profile)
+    evening_items: list[RecommendationItem] = _build_evening_recommendations(aqi, profile)
 
     indoor_guidance = generate_indoor_guidance(profile, aqi)
     sustainable_alts = generate_sustainable_alternatives(profile, aqi)

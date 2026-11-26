@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 
@@ -47,8 +47,8 @@ def mock_observation_severe():
         dominant_pollutant=PollutantType.PM2_5,
         aqi_category=AQICategory.SEVERE,
         data_sufficiency_met=True,
-        measurement_timestamp=datetime.now(timezone.utc),
-        retrieval_timestamp=datetime.now(timezone.utc),
+        measurement_timestamp=datetime.now(UTC),
+        retrieval_timestamp=datetime.now(UTC),
         data_quality_status=DataQualityStatus.VERIFIED,
     )
 

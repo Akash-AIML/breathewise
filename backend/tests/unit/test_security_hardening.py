@@ -2,7 +2,7 @@
 
 import io
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock
 
 import pytest
@@ -244,7 +244,7 @@ async def test_air_quality_cache_is_bounded_and_expires_entries(monkeypatch, cle
     assert len(service._cache) == 5
 
     stale_key = next(iter(service._cache))
-    service._cache[stale_key].expires_at = datetime.now(timezone.utc) - timedelta(seconds=1)
+    service._cache[stale_key].expires_at = datetime.now(UTC) - timedelta(seconds=1)
     await service.get_air_quality_for_coordinates(40.0, 50.0)
     assert stale_key not in service._cache
 

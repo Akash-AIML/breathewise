@@ -1,13 +1,11 @@
-from typing import List, Optional
-
 from app.schemas.profile import HouseholdProfile
 from app.schemas.recommendation import RecommendationItem
 
 
 def _build_morning_recommendations(
-    aqi: Optional[int], profile: HouseholdProfile, is_vulnerable: bool
-) -> List[RecommendationItem]:
-    morning_items: List[RecommendationItem] = []
+    aqi: int | None, profile: HouseholdProfile, is_vulnerable: bool
+) -> list[RecommendationItem]:
+    morning_items: list[RecommendationItem] = []
 
     # --- MORNING RECOMMENDATIONS ---
     # Morning is typically characterized by surface temperature inversion and stagnant emissions in Indian cities
@@ -178,9 +176,9 @@ def _build_morning_recommendations(
 
 
 def _build_afternoon_recommendations(
-    aqi: Optional[int], profile: HouseholdProfile
-) -> List[RecommendationItem]:
-    afternoon_items: List[RecommendationItem] = []
+    aqi: int | None, profile: HouseholdProfile
+) -> list[RecommendationItem]:
+    afternoon_items: list[RecommendationItem] = []
 
     # --- AFTERNOON RECOMMENDATIONS ---
     # Afternoon has maximum solar radiation (ozone peak) and higher mixing boundary layer

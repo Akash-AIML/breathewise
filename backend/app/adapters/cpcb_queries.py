@@ -1,5 +1,5 @@
 import logging
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, Any
 
 from app.adapters.cpcb_transport import CPCBProviderError, redact_secrets
 from app.core.config import settings
@@ -15,16 +15,16 @@ class CPCBQueriesMixin:
 
         async def _fetch_pages(
             self,
-            filters: Optional[Dict[str, str]] = None,
-            max_pages: Optional[int] = None,
-            page_size: Optional[int] = None,
-        ) -> Tuple[List[Dict[str, Any]], Optional[int]]: ...
+            filters: dict[str, str] | None = None,
+            max_pages: int | None = None,
+            page_size: int | None = None,
+        ) -> tuple[list[dict[str, Any]], int | None]: ...
 
-        def parse_records(self, records: List[Dict[str, Any]]) -> List[CPCBStationObservation]: ...
+        def parse_records(self, records: list[dict[str, Any]]) -> list[CPCBStationObservation]: ...
         async def _load_with_fallback(self, key: str, loader: Any) -> Any: ...
 
-    async def _sample_observations(self) -> List[CPCBStationObservation]:
-        async def load() -> List[CPCBStationObservation]:
+    async def _sample_observations(self) -> list[CPCBStationObservation]:
+        async def load() -> list[CPCBStationObservation]:
             records, _ = await self._fetch_pages(
                 max_pages=1,
                 page_size=max(settings.CPCB_MIN_OFFLINE_STATION_SAMPLE, 5),
@@ -33,39 +33,35 @@ class CPCBQueriesMixin:
 
         return await self._load_with_fallback("sample", load)
 
-    async def _all_observations(self) -> List[CPCBStationObservation]:
+    async def _all_observations(self) -> list[CPCBStationObservation]:
         """Bounded pagination, cached. Only used when a precise filter is unavailable."""
 
-        async def load() -> List[CPCBStationObservation]:
+        async def load() -> list[CPCBStationObservation]:
             records, _ = await self._fetch_pages()
             return self.parse_records(records)
 
         return await self._load_with_fallback("all", load)
 
     @staticmethod
-    def _matches(
-        observation: CPCBStationObservation, city: Optional[str], state: Optional[str]
-    ) -> bool:
+    def _matches(observation: CPCBStationObservation, city: str | None, state: str | None) -> bool:
         if city and observation.city.strip().lower() != city.strip().lower():
             return False
-        if state and observation.state.strip().lower() != state.strip().lower():
-            return False
-        return True
+        return not (state and observation.state.strip().lower() != state.strip().lower())
 
-    async def verify_filters(self) -> Dict[str, Dict[str, Any]]:
+    async def verify_filters(self) -> dict[str, dict[str, Any]]:
         """Independently probe Tamil Nadu and Chennai filters against live data."""
 
-        async def load() -> Dict[str, Dict[str, Any]]:
+        async def load() -> dict[str, dict[str, Any]]:
             sample = await self._sample_observations()
             observed_cities = {obs.city.strip().lower() for obs in sample}
             observed_states = {obs.state.strip().lower() for obs in sample}
-            results: Dict[str, Dict[str, Any]] = {}
+            results: dict[str, dict[str, Any]] = {}
 
             for field, value, observed in (
                 ("state", "Tamil Nadu", observed_states),
                 ("city", "Chennai", observed_cities),
             ):
-                entry: Dict[str, Any] = {
+                entry: dict[str, Any] = {
                     "value": value,
                     "observed_in_unfiltered_sample": value.lower() in observed,
                     "verified": False,
@@ -100,7 +96,7 @@ class CPCBQueriesMixin:
 
         return await self._load_with_fallback("filter_verification", load)
 
-    async def _filter_is_verified(self, city: Optional[str], state: Optional[str]) -> bool:
+    async def _filter_is_verified(self, city: str | None, state: str | None) -> bool:
         """Only use upstream filters for values actually seen or probed successfully."""
         sample = await self._sample_observations()
         if city and not any(obs.city.strip().lower() == city.strip().lower() for obs in sample):
@@ -120,15 +116,15 @@ class CPCBQueriesMixin:
         return True
 
     async def get_station_observations(
-        self, city: Optional[str] = None, state: Optional[str] = None
-    ) -> List[CPCBStationObservation]:
+        self, city: str | None = None, state: str | None = None
+    ) -> list[CPCBStationObservation]:
         key = f"filter:{city or ''}:{state or ''}"
 
-        async def load() -> List[CPCBStationObservation]:
-            observations: List[CPCBStationObservation] = []
+        async def load() -> list[CPCBStationObservation]:
+            observations: list[CPCBStationObservation] = []
             if city or state:
                 if await self._filter_is_verified(city, state):
-                    filters: Dict[str, str] = {}
+                    filters: dict[str, str] = {}
                     if state:
                         filters["filters[state]"] = state
                     if city:

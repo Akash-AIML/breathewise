@@ -1,5 +1,3 @@
-from typing import Optional
-
 from fastapi import APIRouter, HTTPException, Query, status
 
 from app.adapters.cpcb import CPCBProviderError
@@ -33,8 +31,8 @@ async def get_nearby_cpcb_observations(
     """Return the nearest CPCB station observations for exact coordinates."""
     try:
         observations = await air_quality_service.cpcb_adapter.get_station_observations()
-    except CPCBProviderError:
-        raise _unavailable("CPCB observations are temporarily unavailable.")
+    except CPCBProviderError as err:
+        raise _unavailable("CPCB observations are temporarily unavailable.") from err
 
     nearby = []
     for observation in observations:
@@ -66,8 +64,8 @@ async def get_nearby_cpcb_observations(
 
 @router.get("/air-quality/summary", response_model=CPCBObservationsResponse)
 async def get_cpcb_summary(
-    city: Optional[str] = Query(None, max_length=100),
-    state: Optional[str] = Query(None, max_length=100),
+    city: str | None = Query(None, max_length=100),
+    state: str | None = Query(None, max_length=100),
     limit: int = Query(100, ge=1, le=settings.API_MAX_PAGE_SIZE),
 ) -> CPCBObservationsResponse:
     """Return CPCB station observations for a city and/or state."""
@@ -80,8 +78,8 @@ async def get_cpcb_summary(
         observations = await air_quality_service.cpcb_adapter.get_station_observations(
             city=city, state=state
         )
-    except CPCBProviderError:
-        raise _unavailable("CPCB observations are temporarily unavailable.")
+    except CPCBProviderError as err:
+        raise _unavailable("CPCB observations are temporarily unavailable.") from err
 
     page = observations[:limit]
     return CPCBObservationsResponse(
@@ -97,8 +95,8 @@ async def get_cpcb_station(station_id: str) -> CPCBObservationResponse:
     """Return one CPCB station observation, including source timestamp and freshness."""
     try:
         observation = await air_quality_service.cpcb_adapter.get_station_observation(station_id)
-    except CPCBProviderError:
-        raise _unavailable("CPCB observations are temporarily unavailable.")
+    except CPCBProviderError as err:
+        raise _unavailable("CPCB observations are temporarily unavailable.") from err
     if not observation:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -112,8 +110,8 @@ async def get_cpcb_filter_verification() -> CPCBFiltersResponse:
     """Expose verified/unverified state for the Tamil Nadu and Chennai filters."""
     try:
         verification = await air_quality_service.cpcb_adapter.verify_filters()
-    except CPCBProviderError:
-        raise _unavailable("CPCB filter verification is temporarily unavailable.")
+    except CPCBProviderError as err:
+        raise _unavailable("CPCB filter verification is temporarily unavailable.") from err
     return CPCBFiltersResponse(
         success=True,
         data=verification,

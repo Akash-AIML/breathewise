@@ -1,4 +1,4 @@
-from typing import List, Literal, Optional
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -8,20 +8,20 @@ ComparisonBasis = Literal["live_station", "coordinate_estimate", "mixed"]
 
 
 class ComparisonDifferential(BaseModel):
-    cleanest_station_id: Optional[str] = None
-    cleanest_station_name: Optional[str] = None
-    most_polluted_station_id: Optional[str] = None
-    most_polluted_station_name: Optional[str] = None
-    aqi_difference: Optional[int] = None
-    pm25_difference_ug_m3: Optional[float] = None
+    cleanest_station_id: str | None = None
+    cleanest_station_name: str | None = None
+    most_polluted_station_id: str | None = None
+    most_polluted_station_name: str | None = None
+    aqi_difference: int | None = None
+    pm25_difference_ug_m3: float | None = None
     summary: str
 
 
 class ComparisonCandidate(BaseModel):
     id: str
     label: str
-    city: Optional[str] = None
-    state: Optional[str] = None
+    city: str | None = None
+    state: str | None = None
     latitude: float
     longitude: float
     basis: Literal["live_station", "coordinate_estimate"]
@@ -32,26 +32,26 @@ class ComparisonPreset(BaseModel):
     key: str
     name: str
     description: str
-    ids: List[str]
+    ids: list[str]
     basis: Literal["live_station", "coordinate_estimate"]
     source: str
-    candidates: List[ComparisonCandidate] = Field(default_factory=list)
+    candidates: list[ComparisonCandidate] = Field(default_factory=list)
 
 
 class ComparisonPresetsResponse(BaseModel):
     success: bool = True
     source: str
-    presets: List[ComparisonPreset] = Field(default_factory=list)
+    presets: list[ComparisonPreset] = Field(default_factory=list)
     message: str
 
 
 class ComparisonResponse(BaseModel):
     success: bool = True
     stations_count: int = Field(..., ge=0)
-    observations: List[NormalizedObservation] = Field(default_factory=list)
-    differential: Optional[ComparisonDifferential] = None
+    observations: list[NormalizedObservation] = Field(default_factory=list)
+    differential: ComparisonDifferential | None = None
     basis: ComparisonBasis = "mixed"
     source: str = "unknown"
-    requested_ids: List[str] = Field(default_factory=list)
-    unresolved_ids: List[str] = Field(default_factory=list)
+    requested_ids: list[str] = Field(default_factory=list)
+    unresolved_ids: list[str] = Field(default_factory=list)
     message: str = ""

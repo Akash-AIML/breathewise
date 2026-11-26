@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock
 
 import httpx
@@ -45,8 +45,8 @@ def sample_observation():
         calculated_aqi=75,
         dominant_pollutant=PollutantType.PM2_5,
         data_sufficiency_met=True,
-        measurement_timestamp=datetime.now(timezone.utc),
-        retrieval_timestamp=datetime.now(timezone.utc),
+        measurement_timestamp=datetime.now(UTC),
+        retrieval_timestamp=datetime.now(UTC),
         data_quality_status=DataQualityStatus.VERIFIED,
     )
 
@@ -59,14 +59,14 @@ def test_haversine_distance_calculation():
 
 def test_stale_measurement_detection(service, sample_observation):
     # Set measurement timestamp to 8 hours ago (threshold is 6h)
-    sample_observation.measurement_timestamp = datetime.now(timezone.utc) - timedelta(hours=8)
+    sample_observation.measurement_timestamp = datetime.now(UTC) - timedelta(hours=8)
     checked = service.check_stale_status(sample_observation)
     assert checked.data_quality_status == DataQualityStatus.STALE
     assert "hours old" in checked.notes
 
 
 def test_fresh_measurement_preserves_verified_status(service, sample_observation):
-    sample_observation.measurement_timestamp = datetime.now(timezone.utc) - timedelta(minutes=30)
+    sample_observation.measurement_timestamp = datetime.now(UTC) - timedelta(minutes=30)
     checked = service.check_stale_status(sample_observation)
     assert checked.data_quality_status == DataQualityStatus.VERIFIED
 

@@ -1,5 +1,3 @@
-from typing import Optional
-
 from fastapi import APIRouter, HTTPException, Query, status
 
 from app.core.config import settings
@@ -13,15 +11,15 @@ air_quality_service = AirQualityService()
 
 @router.get("/stations", response_model=StationsResponse)
 async def list_or_search_stations(
-    query: Optional[str] = Query(
+    query: str | None = Query(
         None, max_length=100, description="City, state or station search query"
     ),
-    city: Optional[str] = Query(None, max_length=100, description="Exact city filter"),
-    state: Optional[str] = Query(None, max_length=100, description="Exact state filter"),
-    lat: Optional[float] = Query(
+    city: str | None = Query(None, max_length=100, description="Exact city filter"),
+    state: str | None = Query(None, max_length=100, description="Exact state filter"),
+    lat: float | None = Query(
         None, ge=-90.0, le=90.0, description="Optional user latitude for proximity search"
     ),
-    lon: Optional[float] = Query(
+    lon: float | None = Query(
         None, ge=-180.0, le=180.0, description="Optional user longitude for proximity search"
     ),
     max_distance_km: float = Query(

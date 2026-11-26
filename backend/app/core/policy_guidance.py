@@ -1,5 +1,3 @@
-from typing import List, Optional
-
 from app.schemas.profile import HouseholdProfile
 from app.schemas.recommendation import (
     IndoorGuidance,
@@ -23,10 +21,10 @@ def calculate_hepa_cadr_m3_hr(area_sqft: int) -> int:
     Formula: CADR = Area (sqft) * 0.0929 m²/sqft * 2.5m ceiling * 5 ACH ≈ Area * 1.16 m³/hr
     """
     cadr = area_sqft * 0.0929 * 2.5 * 5.0
-    return int(round(cadr))
+    return round(cadr)
 
 
-def generate_indoor_guidance(profile: HouseholdProfile, aqi: Optional[int]) -> IndoorGuidance:
+def generate_indoor_guidance(profile: HouseholdProfile, aqi: int | None) -> IndoorGuidance:
     """
     MODULE 5: Evidence-Based Domestic Indoor Guidance.
     Strict scientific grounding: No fake houseplant claims; nuanced ventilation logic.
@@ -104,13 +102,13 @@ def generate_indoor_guidance(profile: HouseholdProfile, aqi: Optional[int]) -> I
 
 
 def generate_sustainable_alternatives(
-    profile: HouseholdProfile, aqi: Optional[int]
-) -> List[SustainableAlternative]:
+    profile: HouseholdProfile, aqi: int | None
+) -> list[SustainableAlternative]:
     """
     MODULE 6: Sustainable Alternatives with Documented Emission Factors.
     Distinguishes emission reduction benefits from personal exposure trade-offs.
     """
-    alternatives: List[SustainableAlternative] = []
+    alternatives: list[SustainableAlternative] = []
 
     # 1. Electric Metro / Urban Rail
     car_factor = EMISSION_FACTORS["car_solo_petrol"]

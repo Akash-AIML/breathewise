@@ -1,6 +1,6 @@
 import logging
-from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime, timedelta, timezone
+from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import httpx
@@ -41,7 +41,7 @@ class OpenMeteoAdapter(AirQualityAdapter):
 
     async def fetch_by_coordinates(
         self, latitude: float, longitude: float
-    ) -> Optional[NormalizedObservation]:
+    ) -> NormalizedObservation | None:
         params: dict[str, str | int | float] = {
             "latitude": round(latitude, 4),
             "longitude": round(longitude, 4),
@@ -68,12 +68,12 @@ class OpenMeteoAdapter(AirQualityAdapter):
             return None
 
     async def search_stations(
-        self, city: Optional[str] = None, state: Optional[str] = None
-    ) -> List[StationMetadata]:
+        self, city: str | None = None, state: str | None = None
+    ) -> list[StationMetadata]:
         return []
 
     @staticmethod
-    def _resolve_timezone(data: Dict[str, Any]):
+    def _resolve_timezone(data: dict[str, Any]):
         name = data.get("timezone")
         if name:
             try:
@@ -83,7 +83,7 @@ class OpenMeteoAdapter(AirQualityAdapter):
         return timezone(timedelta(hours=5, minutes=30))
 
     @staticmethod
-    def _parse_local_time(value: Optional[str], tz) -> Optional[datetime]:
+    def _parse_local_time(value: str | None, tz) -> datetime | None:
         if not value:
             return None
         try:
@@ -93,7 +93,7 @@ class OpenMeteoAdapter(AirQualityAdapter):
         return dt.astimezone(tz) if dt.tzinfo else dt.replace(tzinfo=tz)
 
     @staticmethod
-    def _rolling_average(series: List[Any], end_index: int, hours: int) -> Optional[float]:
+    def _rolling_average(series: list[Any], end_index: int, hours: int) -> float | None:
         """Average exactly `hours` values ending at end_index; nulls reject the window."""
         start_index = end_index - hours + 1
         if start_index < 0 or end_index >= len(series):
@@ -105,7 +105,7 @@ class OpenMeteoAdapter(AirQualityAdapter):
         return sum(values) / hours
 
     @staticmethod
-    def _rolling_values_at(hourly_data: Dict[str, Any], index: int) -> Dict[PollutantType, float]:
+    def _rolling_values_at(hourly_data: dict[str, Any], index: int) -> dict[PollutantType, float]:
         series_map = {
             PollutantType.PM2_5: ("pm2_5", 24),
             PollutantType.PM10: ("pm10", 24),
@@ -114,7 +114,7 @@ class OpenMeteoAdapter(AirQualityAdapter):
             PollutantType.CO: ("carbon_monoxide", 8),
             PollutantType.O3: ("ozone", 8),
         }
-        values: Dict[PollutantType, float] = {}
+        values: dict[PollutantType, float] = {}
         for pollutant, (key, hours) in series_map.items():
             average = OpenMeteoAdapter._rolling_average(hourly_data.get(key, []), index, hours)
             if average is not None:
@@ -123,9 +123,9 @@ class OpenMeteoAdapter(AirQualityAdapter):
 
     @staticmethod
     def _build_readings(
-        values: Dict[PollutantType, float], averaged: bool
-    ) -> Dict[PollutantType, NormalizedPollutantReading]:
-        readings: Dict[PollutantType, NormalizedPollutantReading] = {}
+        values: dict[PollutantType, float], averaged: bool
+    ) -> dict[PollutantType, NormalizedPollutantReading]:
+        readings: dict[PollutantType, NormalizedPollutantReading] = {}
         for pollutant, value in values.items():
             if pollutant == PollutantType.CO:
                 reading = NormalizedPollutantReading(
@@ -159,7 +159,7 @@ class OpenMeteoAdapter(AirQualityAdapter):
         return readings
 
     @staticmethod
-    def _instant_values(current: Dict[str, Any]) -> Dict[PollutantType, float]:
+    def _instant_values(current: dict[str, Any]) -> dict[PollutantType, float]:
         raw_map = {
             PollutantType.PM2_5: "pm2_5",
             PollutantType.PM10: "pm10",
@@ -168,7 +168,7 @@ class OpenMeteoAdapter(AirQualityAdapter):
             PollutantType.CO: "carbon_monoxide",
             PollutantType.O3: "ozone",
         }
-        values: Dict[PollutantType, float] = {}
+        values: dict[PollutantType, float] = {}
         for pollutant, key in raw_map.items():
             value = current.get(key)
             if isinstance(value, (int, float)) and value >= 0:
@@ -176,14 +176,14 @@ class OpenMeteoAdapter(AirQualityAdapter):
         return values
 
     @staticmethod
-    def _completed_hour_indices(data: Dict[str, Any], tz) -> List[int]:
+    def _completed_hour_indices(data: dict[str, Any], tz) -> list[int]:
         hourly = data.get("hourly", {})
         times = hourly.get("time", [])
         current_dt = OpenMeteoAdapter._parse_local_time(data.get("current", {}).get("time"), tz)
         if not times or current_dt is None:
             return []
         current_hour = current_dt.replace(minute=0, second=0, microsecond=0)
-        indices: List[int] = []
+        indices: list[int] = []
         for index, value in enumerate(times):
             point_dt = OpenMeteoAdapter._parse_local_time(value, tz)
             if point_dt is not None and point_dt < current_hour:
@@ -191,8 +191,8 @@ class OpenMeteoAdapter(AirQualityAdapter):
         return indices
 
     def _parse_response(
-        self, data: Dict[str, Any], lat: float, lon: float
-    ) -> Optional[NormalizedObservation]:
+        self, data: dict[str, Any], lat: float, lon: float
+    ) -> NormalizedObservation | None:
         current = data.get("current", {})
         if not current:
             return None
@@ -205,9 +205,9 @@ class OpenMeteoAdapter(AirQualityAdapter):
         # Prefer true CPCB averaging windows built from the hourly model series.
         # Fall back to instantaneous values only when no completed hours exist,
         # and label those readings as estimated rather than 24-hour averages.
-        values: Dict[PollutantType, float] = {}
+        values: dict[PollutantType, float] = {}
         averaged = False
-        meas_time = self._parse_local_time(current.get("time"), tz) or datetime.now(timezone.utc)
+        meas_time = self._parse_local_time(current.get("time"), tz) or datetime.now(UTC)
         if completed_indices:
             last_index = completed_indices[-1]
             values = self._rolling_values_at(hourly_data, last_index)
@@ -236,7 +236,7 @@ class OpenMeteoAdapter(AirQualityAdapter):
             notes = f"{notes}; {note}" if notes else note
 
         # Last 24 completed hours only — never future forecast hours.
-        hourly_trend: List[HourlyTrendPoint] = []
+        hourly_trend: list[HourlyTrendPoint] = []
         for index in completed_indices[-24:]:
             point_values = self._rolling_values_at(hourly_data, index)
             point_readings = self._build_readings(point_values, averaged=True)
@@ -290,7 +290,7 @@ class OpenMeteoAdapter(AirQualityAdapter):
             aqi_category=calc_result.category,
             data_sufficiency_met=calc_result.data_sufficiency_met,
             measurement_timestamp=meas_time,
-            retrieval_timestamp=datetime.now(timezone.utc),
+            retrieval_timestamp=datetime.now(UTC),
             data_quality_status=quality_status,
             notes=notes,
             hourly_trend=hourly_trend,

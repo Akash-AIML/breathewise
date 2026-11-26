@@ -1,6 +1,5 @@
 import logging
-from datetime import datetime, timedelta, timezone
-from typing import Dict, List, Optional, Tuple
+from datetime import UTC, datetime, timedelta
 
 from app.adapters.cpcb import CPCBAdapter
 from app.adapters.openaq import OpenAQAdapter
@@ -17,7 +16,7 @@ from app.schemas.observation import (
 logger = logging.getLogger(__name__)
 
 # Predefined verified Indian city centers and key stations
-INDIAN_CITIES_REGISTRY: List[StationMetadata] = [
+INDIAN_CITIES_REGISTRY: list[StationMetadata] = [
     StationMetadata(
         station_id="cpcb_delhi_ito",
         station_name="ITO, Central Delhi",
@@ -107,7 +106,7 @@ class CacheEntry:
         self.expires_at = expires_at
 
     def is_expired(self) -> bool:
-        return datetime.now(timezone.utc) > self.expires_at
+        return datetime.now(UTC) > self.expires_at
 
 
 class AirQualityService:
@@ -120,7 +119,7 @@ class AirQualityService:
         self.cpcb_adapter = CPCBAdapter(station_registry=INDIAN_CITIES_REGISTRY)
         self.openaq_adapter = OpenAQAdapter()
         self.openmeteo_adapter = OpenMeteoAdapter()
-        self._cache: Dict[str, CacheEntry] = {}
+        self._cache: dict[str, CacheEntry] = {}
 
     def _get_cache_key(self, lat: float, lon: float) -> str:
         # Match the upstream request precision (~11 m) so nearby precise
@@ -129,10 +128,10 @@ class AirQualityService:
 
     def check_stale_status(self, observation: NormalizedObservation) -> NormalizedObservation:
         """Flags observations older than STALE_DATA_THRESHOLD_HOURS as STALE."""
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         meas_time = observation.measurement_timestamp
         if meas_time.tzinfo is None:
-            meas_time = meas_time.replace(tzinfo=timezone.utc)
+            meas_time = meas_time.replace(tzinfo=UTC)
 
         age = now - meas_time
         if age > timedelta(hours=settings.STALE_DATA_THRESHOLD_HOURS):
@@ -144,7 +143,7 @@ class AirQualityService:
 
     async def get_air_quality_for_coordinates(
         self, latitude: float, longitude: float, bypass_cache: bool = False
-    ) -> Optional[NormalizedObservation]:
+    ) -> NormalizedObservation | None:
         """
         Coordinates-aware air quality retrieval with strict multi-source fallback:
         1. In-memory TTL cache lookup
@@ -168,7 +167,7 @@ class AirQualityService:
             # Delete expired entries instead of leaving them to accumulate.
             self._cache.pop(cache_key, None)
 
-        observation: Optional[NormalizedObservation] = None
+        observation: NormalizedObservation | None = None
 
         # Tier 1: CPCB (Primary Official Source)
         try:
@@ -201,7 +200,7 @@ class AirQualityService:
                 )
 
             # Store an immutable-to-callers copy in cache
-            expires_at = datetime.now(timezone.utc) + timedelta(seconds=settings.CACHE_TTL_SECONDS)
+            expires_at = datetime.now(UTC) + timedelta(seconds=settings.CACHE_TTL_SECONDS)
             self._cache[cache_key] = CacheEntry(observation.model_copy(deep=True), expires_at)
             prune_expired(self._cache, lambda entry: entry.expires_at)
             enforce_limit(self._cache, settings.CACHE_MAX_ENTRIES)
@@ -212,7 +211,7 @@ class AirQualityService:
 
     def search_nearby_stations(
         self, latitude: float, longitude: float, max_distance_km: float = 50.0
-    ) -> List[Tuple[StationMetadata, float]]:
+    ) -> list[tuple[StationMetadata, float]]:
         """Returns stations from the registry within max_distance_km, sorted by distance."""
         results = []
         for station in INDIAN_CITIES_REGISTRY:
@@ -227,7 +226,7 @@ class AirQualityService:
 
     async def search_nearby_stations_live(
         self, latitude: float, longitude: float, max_distance_km: float = 50.0
-    ) -> Tuple[List[StationMetadata], str]:
+    ) -> tuple[list[StationMetadata], str]:
         """Prefer real CPCB stations; fall back to the labelled static registry."""
         try:
             stations = await self.cpcb_adapter.fetch_nearby(latitude, longitude, max_distance_km)
@@ -243,10 +242,10 @@ class AirQualityService:
 
     async def search_stations_live(
         self,
-        query: Optional[str] = None,
-        city: Optional[str] = None,
-        state: Optional[str] = None,
-    ) -> Tuple[List[StationMetadata], str]:
+        query: str | None = None,
+        city: str | None = None,
+        state: str | None = None,
+    ) -> tuple[list[StationMetadata], str]:
         """Search real CPCB station metadata, with a labelled registry fallback."""
         observations = []
         try:
@@ -280,18 +279,18 @@ class AirQualityService:
             station.model_copy(update={"provider": "fallback_registry"}) for station in fallback
         ], "fallback_registry"
 
-    def search_stations_by_query(self, query: str) -> List[StationMetadata]:
+    def search_stations_by_query(self, query: str) -> list[StationMetadata]:
         """Case-insensitive search across station names, cities, and states."""
         q = query.strip().lower()
         if not q:
             return INDIAN_CITIES_REGISTRY
 
-        matches = []
-        for station in INDIAN_CITIES_REGISTRY:
+        return [
+            station
+            for station in INDIAN_CITIES_REGISTRY
             if (
                 q in station.station_name.lower()
                 or q in station.city.lower()
                 or q in station.state.lower()
-            ):
-                matches.append(station)
-        return matches
+            )
+        ]

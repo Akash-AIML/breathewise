@@ -1,6 +1,6 @@
 """Plain helpers shared by the split CPCB unit-test modules."""
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import httpx
 
@@ -9,7 +9,7 @@ from app.schemas.cpcb import CPCBStationObservation
 from app.schemas.observation import DataQualityStatus
 
 SECRET = "unit-test-secret-key"
-NOW = datetime.now(timezone.utc).isoformat()
+NOW = datetime.now(UTC).isoformat()
 
 
 def make_record(**overrides):
@@ -38,8 +38,8 @@ def make_observation(**overrides):
         "station_id": "cpcb_tamil_nadu_chennai_velachery",
         "latitude": 12.9815,
         "longitude": 80.2182,
-        "last_update": datetime.now(timezone.utc),
-        "retrieval_timestamp": datetime.now(timezone.utc),
+        "last_update": datetime.now(UTC),
+        "retrieval_timestamp": datetime.now(UTC),
         "freshness": DataQualityStatus.VERIFIED,
     }
     values.update(overrides)

@@ -1,5 +1,4 @@
 from datetime import datetime
-from typing import Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
@@ -11,26 +10,26 @@ class HealthResponse(BaseModel):
     version: str = Field("0.1.0", description="API version")
     timestamp: datetime = Field(..., description="Server current timestamp")
     environment: str = Field(..., description="Current running environment")
-    providers: Dict[str, str] = Field(
+    providers: dict[str, str] = Field(
         default_factory=dict, description="Status of configured data adapters"
     )
 
 
 class AirQualityResponse(BaseModel):
     success: bool = True
-    data: Optional[NormalizedObservation] = None
-    message: Optional[str] = None
+    data: NormalizedObservation | None = None
+    message: str | None = None
 
 
 class StationsResponse(BaseModel):
     success: bool = True
     count: int = Field(..., ge=0)
-    data: List[StationMetadata] = Field(default_factory=list)
-    message: Optional[str] = None
+    data: list[StationMetadata] = Field(default_factory=list)
+    message: str | None = None
 
 
 class ErrorDetail(BaseModel):
-    field: Optional[str] = None
+    field: str | None = None
     message: str
 
 
@@ -38,4 +37,4 @@ class ErrorResponse(BaseModel):
     success: bool = False
     error_code: str
     message: str
-    details: Optional[List[ErrorDetail]] = None
+    details: list[ErrorDetail] | None = None

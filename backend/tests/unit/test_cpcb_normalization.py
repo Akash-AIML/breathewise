@@ -1,7 +1,7 @@
 """CPCB unit tests: record normalization, freshness, caching and request budgets."""
 
 import asyncio
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import httpx
 import pytest
@@ -65,7 +65,7 @@ def test_duplicate_pollutant_rows_are_collapsed_with_warning():
 
 
 def test_same_station_different_timestamps_are_not_merged():
-    later = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+    later = (datetime.now(UTC) - timedelta(hours=1)).isoformat()
     adapter = CPCBAdapter(api_key=SECRET)
     observations = adapter.parse_records(
         [make_record(pollutant_id="PM2.5"), make_record(pollutant_id="NO2", last_update=later)]
@@ -83,13 +83,13 @@ def test_same_station_different_timestamps_are_not_merged():
     ],
 )
 def test_freshness_thresholds_use_source_time(age_hours, expected):
-    timestamp = datetime.now(timezone.utc) - timedelta(hours=age_hours)
+    timestamp = datetime.now(UTC) - timedelta(hours=age_hours)
     status, _ = CPCBAdapter._freshness(timestamp)
     assert status == expected
 
 
 def test_future_and_missing_timestamps_are_unavailable():
-    future = datetime.now(timezone.utc) + timedelta(hours=1)
+    future = datetime.now(UTC) + timedelta(hours=1)
     status, warning = CPCBAdapter._freshness(future)
     assert status == DataQualityStatus.UNAVAILABLE
     assert "future" in warning
@@ -126,7 +126,7 @@ async def test_failed_refresh_keeps_last_valid_observation_as_stale():
     adapter = adapter_with_mock(handler)
     assert len(await adapter._all_observations()) == 1
     adapter._cache["all"] = (
-        datetime.now(timezone.utc) - timedelta(seconds=1),
+        datetime.now(UTC) - timedelta(seconds=1),
         adapter._last_valid["all"][1],
     )
     should_fail["value"] = True

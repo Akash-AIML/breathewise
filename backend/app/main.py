@@ -1,6 +1,6 @@
 import logging
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.exceptions import RequestValidationError
@@ -116,7 +116,7 @@ async def root_health():
     return HealthResponse(
         status="healthy",
         version="0.1.0",
-        timestamp=datetime.now(timezone.utc),
+        timestamp=datetime.now(UTC),
         environment=settings.ENVIRONMENT,
         providers={
             "cpcb_ogd": "configured" if settings.DATA_GOV_IN_API_KEY else "unconfigured_degraded",

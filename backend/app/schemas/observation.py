@@ -1,11 +1,10 @@
-from datetime import datetime, timezone
-from enum import Enum
-from typing import Dict, List, Optional
+from datetime import UTC, datetime
+from enum import StrEnum
 
 from pydantic import BaseModel, Field, field_validator
 
 
-class PollutantType(str, Enum):
+class PollutantType(StrEnum):
     PM2_5 = "PM2.5"
     PM10 = "PM10"
     NO2 = "NO2"
@@ -16,7 +15,7 @@ class PollutantType(str, Enum):
     PB = "Pb"
 
 
-class AQICategory(str, Enum):
+class AQICategory(StrEnum):
     GOOD = "Good"
     SATISFACTORY = "Satisfactory"
     MODERATE = "Moderate"
@@ -25,7 +24,7 @@ class AQICategory(str, Enum):
     SEVERE = "Severe"
 
 
-class DataQualityStatus(str, Enum):
+class DataQualityStatus(StrEnum):
     VERIFIED = "verified"
     ESTIMATED = "estimated"
     DELAYED = "delayed"
@@ -37,30 +36,30 @@ class DataQualityStatus(str, Enum):
 class NormalizedPollutantReading(BaseModel):
     pollutant: PollutantType
     value: float = Field(..., ge=0.0, description="Concentration value; must be non-negative")
-    unit: Optional[str] = Field(
+    unit: str | None = Field(
         None, description="Verified measurement unit; null when the provider omits it"
     )
-    sub_index: Optional[int] = Field(None, ge=0, description="CPCB calculated sub-index")
-    averaging_period_hours: Optional[int] = Field(
+    sub_index: int | None = Field(None, ge=0, description="CPCB calculated sub-index")
+    averaging_period_hours: int | None = Field(
         None, ge=1, le=24, description="Verified averaging period; null when unknown"
     )
-    min_value: Optional[float] = Field(None, ge=0.0, description="Source-reported minimum")
-    max_value: Optional[float] = Field(None, ge=0.0, description="Source-reported maximum")
-    source_pollutant_id: Optional[str] = Field(
+    min_value: float | None = Field(None, ge=0.0, description="Source-reported minimum")
+    max_value: float | None = Field(None, ge=0.0, description="Source-reported maximum")
+    source_pollutant_id: str | None = Field(
         None, description="Original pollutant identifier from the provider"
     )
 
 
 class HourlyTrendPoint(BaseModel):
     time: str = Field(..., description="ISO timestamp for the hour")
-    pm2_5: Optional[float] = None
-    pm10: Optional[float] = None
-    no2: Optional[float] = None
-    so2: Optional[float] = None
-    co: Optional[float] = None
-    o3: Optional[float] = None
-    aqi: Optional[int] = None
-    category: Optional[AQICategory] = None
+    pm2_5: float | None = None
+    pm10: float | None = None
+    no2: float | None = None
+    so2: float | None = None
+    co: float | None = None
+    o3: float | None = None
+    aqi: int | None = None
+    category: AQICategory | None = None
 
 
 class StationMetadata(BaseModel):
@@ -70,10 +69,10 @@ class StationMetadata(BaseModel):
     state: str
     latitude: float = Field(..., ge=-90.0, le=90.0)
     longitude: float = Field(..., ge=-180.0, le=180.0)
-    distance_km: Optional[float] = Field(None, ge=0.0)
-    elevation_m: Optional[float] = None
-    provider: Optional[str] = Field(None, description="Source of this station metadata")
-    source_observation_time: Optional[datetime] = Field(
+    distance_km: float | None = Field(None, ge=0.0)
+    elevation_m: float | None = None
+    provider: str | None = Field(None, description="Source of this station metadata")
+    source_observation_time: datetime | None = Field(
         None, description="Source timestamp when this station last reported"
     )
 
@@ -81,10 +80,10 @@ class StationMetadata(BaseModel):
 class NormalizedObservation(BaseModel):
     provider: str = Field(..., description="Data source name (e.g. cpcb_ogd, openaq, openmeteo)")
     station: StationMetadata
-    readings: Dict[str, NormalizedPollutantReading] = Field(default_factory=dict)
-    calculated_aqi: Optional[int] = Field(None, ge=0, description="Overall CPCB AQI value")
-    dominant_pollutant: Optional[PollutantType] = None
-    aqi_category: Optional[AQICategory] = None
+    readings: dict[str, NormalizedPollutantReading] = Field(default_factory=dict)
+    calculated_aqi: int | None = Field(None, ge=0, description="Overall CPCB AQI value")
+    dominant_pollutant: PollutantType | None = None
+    aqi_category: AQICategory | None = None
     data_sufficiency_met: bool = Field(
         False, description="Whether CPCB >=3 pollutants rule is satisfied"
     )
@@ -92,18 +91,18 @@ class NormalizedObservation(BaseModel):
         ..., description="Actual timestamp reported by the station"
     )
     retrieval_timestamp: datetime = Field(
-        default_factory=lambda: datetime.now(timezone.utc),
+        default_factory=lambda: datetime.now(UTC),
         description="When our server retrieved it",
     )
     data_quality_status: DataQualityStatus = Field(DataQualityStatus.VERIFIED)
-    notes: Optional[str] = None
-    hourly_trend: List[HourlyTrendPoint] = Field(
+    notes: str | None = None
+    hourly_trend: list[HourlyTrendPoint] = Field(
         default_factory=list, description="Historical hourly trend series"
     )
 
     @field_validator("readings")
     @classmethod
     def validate_readings_not_empty(
-        cls, v: Dict[str, NormalizedPollutantReading]
-    ) -> Dict[str, NormalizedPollutantReading]:
+        cls, v: dict[str, NormalizedPollutantReading]
+    ) -> dict[str, NormalizedPollutantReading]:
         return v

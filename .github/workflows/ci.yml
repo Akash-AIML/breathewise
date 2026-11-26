@@ -28,12 +28,15 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -e .
-          pip install ruff pytest pytest-asyncio coverage bandit
+          pip install ruff pytest pytest-asyncio coverage bandit mypy pydantic
 
       - name: Lint with Ruff
         run: |
           ruff check .
           ruff format --check .
+
+      - name: Type Check (mypy)
+        run: mypy app/ --ignore-missing-imports
 
       - name: Security Scan (Bandit)
         run: bandit -r app/ -ll
