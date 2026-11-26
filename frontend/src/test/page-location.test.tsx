@@ -77,6 +77,34 @@ describe("HomePage location handling", () => {
     expect(screen.getAllByText(/Delhi \(ITO\)/i).length).toBeGreaterThan(0);
   });
 
+  it("uses manually entered coordinates when the laptop browser is wrong", async () => {
+    render(<HomePage />);
+    fireEvent.change(screen.getByLabelText(/exact coordinates \(lat, lon\)/i), {
+      target: { value: "12.9716, 77.5946" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /use coordinates/i }));
+
+    await waitFor(() => {
+      const urls = (global.fetch as ReturnType<typeof vi.fn>).mock.calls.map((call) => String(call[0]));
+      expect(urls.some((url) => url.includes("lat=12.9716") && url.includes("lon=77.5946"))).toBe(true);
+    });
+    expect(
+      screen.getByText(/using manually entered coordinates \(12\.9716, 77\.5946\)/i)
+    ).toBeInTheDocument();
+  });
+
+  it("rejects manual coordinates outside valid latitude and longitude ranges", async () => {
+    render(<HomePage />);
+    fireEvent.change(screen.getByLabelText(/exact coordinates \(lat, lon\)/i), {
+      target: { value: "99.0000, 77.5946" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /use coordinates/i }));
+
+    expect(await screen.findByText(/latitude must be a number between -90 and 90/i)).toBeInTheDocument();
+    const urls = (global.fetch as ReturnType<typeof vi.fn>).mock.calls.map((call) => String(call[0]));
+    expect(urls.some((url) => url.includes("lat=99"))).toBe(false);
+  });
+
   it("rejects invalid device coordinates instead of selecting them", async () => {
     setGeolocation(Number.NaN, Number.NaN, 35);
     render(<HomePage />);

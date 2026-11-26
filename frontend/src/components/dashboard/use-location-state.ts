@@ -30,10 +30,13 @@ export interface LocationState {
   setLocationLabel: React.Dispatch<React.SetStateAction<string | null>>;
   locationQuery: string;
   setLocationQuery: React.Dispatch<React.SetStateAction<string>>;
+  manualCoordinates: string;
+  setManualCoordinates: React.Dispatch<React.SetStateAction<string>>;
   locationResults: GeocodedLocation[];
   isSearchingLocation: boolean;
   handleUseMyLocation: () => void;
   handleLocationSearch: (event: React.FormEvent<HTMLFormElement>) => void;
+  handleManualCoordinates: (event: React.FormEvent<HTMLFormElement>) => void;
   selectGeocodedLocation: (place: GeocodedLocation) => void;
   handleSelectStation: (stn: MapStation) => void;
 }
@@ -45,6 +48,7 @@ export function useLocationState(): LocationState {
   // Guards against a slow reverse lookup overwriting a newer user selection.
   const locationRequestRef = useRef(0);
   const [locationQuery, setLocationQuery] = useState("");
+  const [manualCoordinates, setManualCoordinates] = useState("");
   const [locationResults, setLocationResults] = useState<GeocodedLocation[]>([]);
   const [isSearchingLocation, setIsSearchingLocation] = useState(false);
 
@@ -141,6 +145,38 @@ export function useLocationState(): LocationState {
     }
   };
 
+  const handleManualCoordinates = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const parts = manualCoordinates.trim().split(/[\s,]+/).filter(Boolean);
+    if (parts.length !== 2) {
+      setGeoStatus("Enter latitude and longitude separated by a comma, e.g. 28.6289, 77.2407.");
+      return;
+    }
+    const lat = Number(parts[0]);
+    const lon = Number(parts[1]);
+    if (!Number.isFinite(lat) || lat < -90 || lat > 90) {
+      setGeoStatus("Latitude must be a number between -90 and 90.");
+      return;
+    }
+    if (!Number.isFinite(lon) || lon < -180 || lon > 180) {
+      setGeoStatus("Longitude must be a number between -180 and 180.");
+      return;
+    }
+
+    locationRequestRef.current += 1;
+    setSelectedStation({
+      name: "Manual Coordinates",
+      station_id: "manual_coordinates",
+      city: "Manual coordinates",
+      state: "",
+      lat,
+      lon,
+    });
+    setLocationLabel(`${lat.toFixed(4)}, ${lon.toFixed(4)}`);
+    setGeoStatus(`Using manually entered coordinates (${lat.toFixed(4)}, ${lon.toFixed(4)}).`);
+    setLocationResults([]);
+  };
+
   const selectGeocodedLocation = (place: GeocodedLocation) => {
     locationRequestRef.current += 1;
     const region = [place.admin1, place.country].filter(Boolean).join(", ");
@@ -171,10 +207,13 @@ export function useLocationState(): LocationState {
     setLocationLabel,
     locationQuery,
     setLocationQuery,
+    manualCoordinates,
+    setManualCoordinates,
     locationResults,
     isSearchingLocation,
     handleUseMyLocation,
     handleLocationSearch,
+    handleManualCoordinates,
     selectGeocodedLocation,
     handleSelectStation,
   };

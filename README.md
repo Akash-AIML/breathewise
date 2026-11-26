@@ -7,7 +7,7 @@
 > [`docs/DEPLOYMENT_STATUS.md`](docs/DEPLOYMENT_STATUS.md).
 
 [![Backend Tests](https://img.shields.io/badge/Backend%20Tests-158%20passing-brightgreen)](backend/tests)
-[![Frontend Tests](https://img.shields.io/badge/Frontend%20Tests-76%20passing-brightgreen)](frontend/src/test)
+[![Frontend Tests](https://img.shields.io/badge/Frontend%20Tests-78%20passing-brightgreen)](frontend/src/test)
 [![Coverage](https://img.shields.io/badge/Coverage-87%25-yellow)](docs/artifacts/coverage-html/index.html)
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-blue)](frontend)
 [![axe](https://img.shields.io/badge/axe-0%20violations-brightgreen)](docs/artifacts/axe-results.json)
@@ -36,7 +36,7 @@ BreatheWise helps Indian families navigate urban air pollution through:
 
 - **Genuine real-time air quality measurements** — CPCB/data.gov.in, OpenAQ, Open-Meteo CAMS (cascading failover)
 - **Location-aware station selection** — 10+ verified Indian CPCB stations with Haversine distance calculation
-- **Exact coordinates plus a readable place label** — “Use My Location” requests a fresh high-accuracy device fix (`maximumAge: 0`), shows the reported coordinates and accuracy radius, and uses a reverse-geocoded locality (OpenStreetMap Nominatim) as a label only; queries still use the device coordinates. Invalid fixes and browser-reported accuracy worse than ±2 km are rejected rather than being labelled exact, so laptop IP/Wi-Fi fallbacks do not silently replace your location. When reverse geocoding is unavailable, a popular-station label is used only within 25 km; distant cities are never reported as “near”.
+- **Exact coordinates plus a readable place label** — “Use My Location” requests a fresh high-accuracy device fix (`maximumAge: 0`), shows the reported coordinates and accuracy radius, and uses a reverse-geocoded locality (OpenStreetMap Nominatim) as a label only; queries still use the device coordinates. Invalid fixes and browser-reported accuracy worse than ±2 km are rejected rather than being labelled exact, so laptop IP/Wi-Fi fallbacks do not silently replace your location. A manual `lat, lon` input is available when a laptop browser reports the wrong point. When reverse geocoding is unavailable, a popular-station label is used only within 25 km; distant cities are never reported as “near”.
 - **Personalized household recommendations** — deterministic policy engine tuned to your household's vulnerabilities
 - **Low-emission daily routines** — diurnal planning with temperature inversion and ozone dispersion modelling
 - **Indoor air quality guidance** — CADR calculator, filter maintenance, cooking smoke management

@@ -34,10 +34,13 @@ export default function HomePage() {
     locationLabel,
     locationQuery,
     setLocationQuery,
+    manualCoordinates,
+    setManualCoordinates,
     locationResults,
     isSearchingLocation,
     handleUseMyLocation,
     handleLocationSearch,
+    handleManualCoordinates,
     selectGeocodedLocation,
     handleSelectStation,
   } = useLocationState();
@@ -173,6 +176,7 @@ export default function HomePage() {
         profile={profile}
         selectedStation={selectedStation}
         locationQuery={locationQuery}
+        manualCoordinates={manualCoordinates}
         isSearchingLocation={isSearchingLocation}
         geoStatus={geoStatus}
         locationResults={locationResults}
@@ -181,6 +185,8 @@ export default function HomePage() {
         onUseMyLocation={handleUseMyLocation}
         onLocationQueryChange={setLocationQuery}
         onLocationSearch={handleLocationSearch}
+        onManualCoordinatesChange={setManualCoordinates}
+        onManualCoordinatesSubmit={handleManualCoordinates}
         onSelectGeocodedLocation={selectGeocodedLocation}
         onSelectStation={handleSelectStation}
       />
